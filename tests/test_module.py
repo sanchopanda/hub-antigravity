@@ -78,6 +78,9 @@ class Launch(Env):
         # у модуля нет полей, которые ядро запрещает модулю (HUB_* только свои HUB_MOD_ANTIGRAVITY_*)
         for k in env:
             self.assertTrue(k.startswith("HUB_MOD_ANTIGRAVITY_"), k)
+        codex_env = self.main.launch({"session": "s", "kind": "work", "model": "codex/claude-agy"})["env"]
+        self.assertEqual(codex_env["HUB_MOD_ANTIGRAVITY_MODEL"], "gemini-carbon")
+        self.assertEqual(codex_env["HUB_MOD_ANTIGRAVITY_CODEX_WORK"], "1")
 
     def test_the_default_model_of_the_hub_counts_for_a_new_session(self):
         self.assertEqual(self.main.launch({"session": "s"}, default="claude-agy")["env"]["HUB_MOD_ANTIGRAVITY_ROUTE"], "1")

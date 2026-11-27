@@ -19,13 +19,14 @@ hub antigravity doctor
 в `$HUB_MOD_ANTIGRAVITY_ROOT/codex_bridge.py`. При обновлении модуль переносит установленные записи хука
 и MCP в конфигурации agy на актуальную версию.
 
-Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.3.2 — модуль включён в хабе (`HUB_CLAUDE` в службе,
+Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.3.3 — модуль включён в хабе (`HUB_CLAUDE` в службе,
 `agy 1.5.18`, `setup` выполнен). Скиллы agy настроены глобально (`~/.gemini/config/skills.json`), исполнители и
 мини-хабы идут через мост, их запреты держит хук agy; в верхней полосе страницы хаба работает веб-виджет остатка квоты.
 
 ## Как это устроено
 - Модель сессии `claude-agy` (id модели agy — `hub.json` → `antigravity.models`, «default» — agy по умолчанию).
   Только ручной выбор, лестница daybudget и ворота пула poolpass такие сессии не трогают.
+  На хабе Codex модель задаётся как `codex/claude-agy`.
 - Ядро запускает `bin/claude` (`HUB_CLAUDE` в службе хаба). Для обычных сессий — одна проверка и `exec` настоящего
   claude (`bin/real-claude` или `~/.local/bin/claude`). Для `claude-agy` — `bridge.py`: один долгий процесс `agy -p=`
   со stream-json, события agy переводятся в события Claude Code, хуки ядра мост зовёт сам.

@@ -94,7 +94,11 @@ def settings():
 
 def agy_model(model, cfg=None):
     """Id модели agy для модели сессии (claude-agy…); None — модуль её не знает; "" — agy по умолчанию (без --model)."""
-    got = (cfg or settings())["models"].get(str(model or ""))
+    name = str(model or "")
+    models = (cfg or settings())["models"]
+    got = models.get(name)
+    if got is None and name.startswith("codex/"):
+        got = models.get(name[len("codex/"):])
     if got is None:
         return None
     got = str(got).strip()
