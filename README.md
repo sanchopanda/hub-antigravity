@@ -11,7 +11,7 @@ hub antigravity setup
 hub antigravity doctor
 ```
 
-Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.1.1 — модуль включён в хабе (`HUB_CLAUDE` в службе,
+Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.2.0 — модуль включён в хабе (`HUB_CLAUDE` в службе,
 `agy 1.5.18`, `setup` выполнен). Скиллы agy настроены глобально (`~/.gemini/config/skills.json`), исполнители и
 мини-хабы идут через мост, их запреты держит хук agy.
 
