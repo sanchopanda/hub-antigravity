@@ -108,10 +108,11 @@ def agy_model(model, cfg=None):
 AGY = re.compile(r"(^|[-_/])agy($|[-_])")   # то же правило в daybudget/budget.py и poolpass/poolpass.py
 
 
-def is_agy_model(model):
-    """Модель с agy отдельным куском имени (claude-agy, claude-agy-argon) — свой движок вне лестницы daybudget и вне
-    ворот пула (как qwen)."""
-    return bool(AGY.search(str(model or "").lower()))
+def is_agy_model(model, cfg=None):
+    """Модель Antigravity: имя с agy или явно заданная в antigravity.models."""
+    name = str(model or "").lower()
+    bare = name[len("codex/"):] if name.startswith("codex/") else name
+    return bool(AGY.search(name)) or bare in (cfg or settings())["models"]
 
 
 # --- блок (квота / вход) -------------------------------------------------------------------------------------------

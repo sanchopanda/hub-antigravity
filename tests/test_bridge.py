@@ -357,12 +357,19 @@ class Gates(Base):
         self.assertFalse(route.CORE_TEXT.search(r["result"]), r["result"])
         return r
 
-    def test_the_third_session_is_refused_without_starting_agy(self):
+    def test_the_third_session_waits_for_a_slot_without_starting_agy(self):
         held = [store_take(self.sb, f"s{i}") for i in (1, 2)]
         self.addCleanup(lambda: [h.release() for h in held])
         p = self.session("text")
         p.user("x")
-        self.refused(p, "Antigravity занят: s1, s2")
+        p.read(lambda m: m.get("type") == "system" and m.get("subtype") == "status" and
+               m.get("status") == "waiting")
+        self.assertEqual(self.sb.agy_runs(), [])
+        self.assertEqual(p.results(), [])
+        held.pop().release()
+        p.wait_results(1)
+        self.assertIn("agy-s", [name for _, name in store_report(self.sb)])
+        self.assertEqual(len(self.sb.agy_runs()), 1)
 
     def test_a_free_place_is_taken_and_given_back(self):
         held = [store_take(self.sb, "s1")]

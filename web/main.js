@@ -2,7 +2,7 @@
 // Falls back to "—" when agy did not respond or cached data is older than 5 minutes.
 const MOSCOW_TZ = "Europe/Moscow";
 const MAX_CACHE_S = 300;
-const AGY_MODEL = /(^|[-_/])agy($|[-_])/i;
+const AGY_MODEL = /(^|[-_/])agy($|[-_])|^codex\/claude-(?:opus|sonnet)-5-5$/i;
 
 const STR = {
   ru: {

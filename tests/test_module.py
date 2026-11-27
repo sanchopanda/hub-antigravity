@@ -39,7 +39,11 @@ class Env(unittest.TestCase):
         os.environ.update(HUB_STATE_DIR=os.path.join(self.dir, "state"), HUB_CONFIG=os.path.join(self.dir, "hub.json"),
                           HUB_CONFIG_DIR=os.path.join(self.dir, "conf"), CLAUDE_CONFIG_DIR=os.path.join(self.dir, "claude"))
         os.environ.pop("HUB_MOD_ANTIGRAVITY_DATA", None)
-        self.hub({"antigravity": {"models": {"claude-agy": "gemini-carbon", "claude-agy-argon": "default"}}})
+        self.hub({"antigravity": {"models": {
+            "claude-agy": "gemini-carbon", "claude-agy-argon": "default",
+            "claude-opus-5-5": "claude-opus-5-5-high",
+            "claude-sonnet-5-5": "claude-sonnet-5-5-high",
+        }}})
 
     def restore(self):
         for k, v in self.old.items():
@@ -81,13 +85,19 @@ class Launch(Env):
         codex_env = self.main.launch({"session": "s", "kind": "work", "model": "codex/claude-agy"})["env"]
         self.assertEqual(codex_env["HUB_MOD_ANTIGRAVITY_MODEL"], "gemini-carbon")
         self.assertEqual(codex_env["HUB_MOD_ANTIGRAVITY_CODEX_WORK"], "1")
+        for name, agy_id in (("claude-opus-5-5", "claude-opus-5-5-high"),
+                             ("claude-sonnet-5-5", "claude-sonnet-5-5-high")):
+            got = self.main.launch({"session": "s", "kind": "work", "model": f"codex/{name}"})["env"]
+            self.assertEqual(got["HUB_MOD_ANTIGRAVITY_ROUTE"], "1")
+            self.assertEqual(got["HUB_MOD_ANTIGRAVITY_MODEL"], agy_id)
+            self.assertEqual(got["HUB_MOD_ANTIGRAVITY_CODEX_WORK"], "1")
 
     def test_the_default_model_of_the_hub_counts_for_a_new_session(self):
         self.assertEqual(self.main.launch({"session": "s"}, default="claude-agy")["env"]["HUB_MOD_ANTIGRAVITY_ROUTE"], "1")
         self.assertEqual(self.main.launch({"session": "s", "model": "sonnet"}, default="claude-agy"), {})   # своя модель сильнее
 
     def test_other_models_get_nothing_and_so_keep_the_one_check_path(self):
-        for m in ("sonnet", "opus", "claude-deepseek", "claude-qwen", "", None, "claude-sonnet-5-5"):
+        for m in ("sonnet", "opus", "claude-deepseek", "claude-qwen", "", None):
             self.assertEqual(self.main.launch({"session": "s", "model": m}), {}, m)
 
     def test_an_agy_model_without_an_id_goes_to_the_real_claude_and_fails_by_name(self):
@@ -115,6 +125,21 @@ class Launch(Env):
 
 
 class Commands(Env):
+    def test_state_exposes_quota_models_slots_and_exhaustion(self):
+        import quota
+        fresh = {"ok": True, "at": time.time(), "fetched_at": time.time(), "ttl_s": 300,
+                 "gemini": {"h5": {"pct": 0, "reset_at": None},
+                            "weekly": {"pct": 50, "reset_at": None}}}
+        quota.save_cache(fresh)
+        got = agycli.state_payload()
+        self.assertTrue(got["exhausted"])
+        self.assertEqual(got["models"]["claude-agy"], "gemini-carbon")
+        self.assertEqual(got["max_sessions"], 2)
+        self.assertIn("slots", got)
+        result = agycli.handle(["state", "--json"])
+        self.assertEqual(result["code"], 0)
+        self.assertTrue(json.loads(result["out"])["exhausted"])
+
     def test_linux_standard_config_is_found(self):
         os.environ.pop("HUB_CONFIG", None)
         os.environ.pop("HUB_CONFIG_DIR", None)

@@ -1,5 +1,6 @@
 """Команда `hub antigravity` и проверка hub doctor: логика без ядра (main.py только подключает её к точкам модуля)."""
 import os
+import json
 import re
 import subprocess
 import sys
@@ -7,11 +8,13 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import setup as agy_setup  # noqa: E402
+import quota  # noqa: E402
 import store  # noqa: E402
 import sweep  # noqa: E402
 
-USAGE = ("hub antigravity [status] | unblock | sweep [--all-back] | setup [--dry|--undo] [--dir <папка agy>] | doctor\n"
+USAGE = ("hub antigravity [status] | state [--json] | unblock | sweep [--all-back] | setup [--dry|--undo] [--dir <папка agy>] | doctor\n"
          "  status — вход, блок, места, ходы и токены, вызовы DeepSeek; unblock — снять блок;\n"
+         "  state — состояние для модуля выбора провайдера: квота, блок, модели и места;\n"
          "  sweep — что уведёт сессии с Antigravity при блоке (исполняет расписание: sweep.py);\n"
          "  setup — записи в настройки agy (с копией), --undo — снять.")
 SHELL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", "claude")
@@ -117,11 +120,38 @@ def doctor(cfg=None, run=subprocess.run):
     return out
 
 
+def state_payload(now=None):
+    """Состояние Antigravity для оркестратора: только собственные данные модуля."""
+    now = time.time() if now is None else float(now)
+    cfg = store.settings()
+    cached = quota.load_cache(now=now)
+    blocked = store.block(now)
+    gemini = (cached or {}).get("gemini") or {}
+    exhausted = bool(blocked and blocked.get("reason") == "quota")
+    if cached:
+        exhausted = exhausted or any(
+            isinstance(bucket, dict) and isinstance(bucket.get("pct"), (int, float)) and bucket["pct"] <= 0
+            for bucket in (gemini.get("h5"), gemini.get("weekly"))
+        )
+    slots = store.slot_report(cfg["max_sessions"])
+    return {
+        "ok": True,
+        "exhausted": exhausted,
+        "blocked": blocked,
+        "quota": cached,
+        "models": cfg["models"],
+        "max_sessions": cfg["max_sessions"],
+        "slots": [{"number": number, "session": session} for number, session in slots],
+    }
+
+
 def handle(args, caller_owner=False, now=None):
     """Ответ точки cli: {out, err, code}."""
     args = list(args or [])
     if not args or args == ["status"]:
         return {"out": "\n".join(status(now=now)) + "\n", "err": "", "code": 0}
+    if args == ["state", "--json"]:
+        return {"out": json.dumps(state_payload(now=now), ensure_ascii=False) + "\n", "err": "", "code": 0}
     if args == ["unblock"]:
         had = store.block_record()
         store.clear_block()

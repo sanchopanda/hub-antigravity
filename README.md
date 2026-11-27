@@ -19,7 +19,7 @@ hub antigravity doctor
 в `$HUB_MOD_ANTIGRAVITY_ROOT/codex_bridge.py`. При обновлении модуль переносит установленные записи хука
 и MCP в конфигурации agy на актуальную версию.
 
-Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.3.4 — модуль включён в хабе (`HUB_CLAUDE` в службе,
+Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.3.5 — модуль включён в хабе (`HUB_CLAUDE` в службе,
 `agy 1.5.18`, `setup` выполнен). Скиллы agy настроены глобально (`~/.gemini/config/skills.json`), исполнители и
 мини-хабы идут через мост, их запреты держит хук agy; в верхней полосе страницы хаба работает веб-виджет остатка квоты.
 
@@ -27,13 +27,16 @@ hub antigravity doctor
 - Модель сессии `claude-agy` (id модели agy — `hub.json` → `antigravity.models`, «default» — agy по умолчанию).
   Только ручной выбор, лестница daybudget и ворота пула poolpass такие сессии не трогают.
   На хабе Codex модель задаётся как `codex/claude-agy`.
+  Дополнительные пункты `claude-opus-5-5` и `claude-sonnet-5-5` ведут через тот же маршрут к
+  `claude-opus-5-5-high` и `claude-sonnet-5-5-high` в `agy`.
 - Ядро запускает `bin/claude` (`HUB_CLAUDE` в службе хаба). Для обычных сессий — одна проверка и `exec` настоящего
   claude (`bin/real-claude` или `~/.local/bin/claude`). Для `claude-agy` — `bridge.py`: один долгий процесс `agy -p=`
   со stream-json, события agy переводятся в события Claude Code, хуки ядра мост зовёт сам.
 - `launch.env` модуля ставит `HUB_MOD_ANTIGRAVITY_ROUTE=1|handoff`, `_MODEL`, `_PYTHON`, `_DATA`.
 - Ограничитель: ≤ `max_sessions` процессов agy (`flock`; в `hub.json` сейчас 5), блок по квоте и входу (`state.json`),
   свои потолки (`caps`), тихие часы (`quiet`). Исполнители на `claude-agy` включены (`antigravity.executors`,
-  по умолчанию `true`). Учёт: `moddata/antigravity/usage.jsonl`.
+  по умолчанию `true`). Ход сверх `max_sessions` ждёт свободного места и запускается после завершения другого,
+  не завершаясь ошибкой. Учёт: `moddata/antigravity/usage.jsonl`.
 - Режимы разрешений: `bypassPermissions` → `--dangerously-skip-permissions`; `plan` → `--mode plan`;
   `acceptEdits`/`default` → `--mode accept-edits`; `auto` → `--mode auto`. В headless-режиме (`-p=`) при `accept-edits`
   запись внутри рабочей папки проходит, а команды и запись наружу требуют подтверждения и возвращают `denied_actions`
@@ -70,6 +73,8 @@ hub antigravity doctor
 
 ## Проверка
 - Состояние в живом хабе: `hub antigravity status` и `hub antigravity doctor`.
+- Машиночитаемое состояние для оркестратора провайдеров: `hub antigravity state --json` — квота Gemini,
+  исчерпание, блокировка, модели, места и их занятость.
 - Тесты модуля (гонять здесь со снятыми `ANTHROPIC_*` и `CLAUDE_CODE_OAUTH_TOKEN`):
   `cd ~/.hub-personal/ext/antigravity/tests && env -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_API_KEY -u ANTHROPIC_BASE_URL -u CLAUDE_CODE_OAUTH_TOKEN python3 -W ignore -m unittest test_module test_bridge test_shim test_deepseek test_stand test_quota`
 - Процесс модуля с ядром: `~/.hub-personal/bin/python3 -W ignore ~/.hub-personal/scratch/modules-back/check_antigravity.py`

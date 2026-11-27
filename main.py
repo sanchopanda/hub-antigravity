@@ -39,7 +39,7 @@ def launch(req, cfg=None, default=None):
     cfg = cfg or store.settings()
     asked = req.get("model") or default
     base = {"HUB_MOD_ANTIGRAVITY_PYTHON": sys.executable, "HUB_MOD_ANTIGRAVITY_DATA": store.data_dir()}
-    if store.is_agy_model(asked):
+    if store.is_agy_model(asked, cfg):
         mid = store.agy_model(asked, cfg)
         if mid is None:
             return {}       # id модели не задан: claude откажет понятной ошибкой модели, сессия не уйдёт молча на Sonnet

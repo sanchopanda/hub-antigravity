@@ -108,6 +108,7 @@ class Bridge:
         self.child, self.gen, self.slot = None, 0, None
         self.stderr_tail = deque(maxlen=20)
         self.turn, self.pending, self.eof = None, [], False
+        self.waiting_turn, self.waiting_since = None, None
         self.cum = {}            # накопительный usage текущего процесса agy
         self.heard = self.mono()
         self.last_keepalive = self.mono()
@@ -207,6 +208,10 @@ class Bridge:
             text = text_of((msg.get("message") or {}).get("content"), self.image_dir())
             if not text.strip():
                 return
+            if self.waiting_turn and not self.turn:
+                texts, slash = self.waiting_turn
+                self.waiting_turn = (texts + [text], slash)
+                return
             head = text.strip().split()[0] if text.strip() else ""
             if head in SLASH and not self.turn:
                 if head in SLASH_PASS:
@@ -238,6 +243,13 @@ class Bridge:
                 self.interrupted = True
                 self.kill_child()
                 self.finish_error("прервано", kind="interrupted")
+            elif self.waiting_turn:
+                self.waiting_turn = None
+                self.waiting_since = None
+                self.emit({"type": "result", "subtype": "error_during_execution", "is_error": True,
+                           "num_turns": 0, "result": "прервано до запуска agy", "session_id": self.uuid,
+                           "duration_ms": 0, "total_cost_usd": None,
+                           "usage": {"input_tokens": 0, "output_tokens": 0}})
         elif sub == "mcp_status":
             answer(True, {"mcpServers": [{"name": n, "status": "connected"} for n in (self.turn.mcp if self.turn else [])]})
         else:
@@ -276,6 +288,14 @@ class Bridge:
     def start_turn(self, texts, slash=None):
         self.cfg = store.settings()      # настройки (тихие часы, потолки, исполнители) — по состоянию на начало хода
         joined = "\n".join(texts)
+        why = self.gate()
+        if why and why.startswith("Antigravity занят:"):
+            self.waiting_turn = (list(texts), slash)
+            if self.waiting_since is None:
+                self.waiting_since = self.mono()
+                self.emit({"type": "system", "subtype": "status", "status": "waiting",
+                           "session_id": self.uuid})
+            return
         if not slash:
             self.hook("UserPromptSubmit", prompt=joined)
         else:
@@ -285,9 +305,10 @@ class Bridge:
         self.turn.request, self.turn.began, self.turn.sent = joined, self.mono(), self.clock()
         self.turn.slash = slash           # /compact или /recap: ядро ждёт result с num_turns 0, а не ход
         self.interrupted = False
-        why = self.gate()
         if why:
             return self.finish_error(why, kind="refused")
+        self.waiting_turn = None
+        self.waiting_since = None
         try:
             self.ensure_child()
             self.write_child(joined if slash else self.agy_prompt(joined))
@@ -461,6 +482,11 @@ class Bridge:
                                  kind="crash")
 
     def on_tick(self):
+        if self.waiting_turn and not self.turn:
+            texts, slash = self.waiting_turn
+            self.waiting_turn = None
+            self.start_turn(texts, slash=slash)
+            return
         if not self.turn or not self.child_alive():
             return
         quiet = self.mono() - self.heard
