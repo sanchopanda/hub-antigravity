@@ -6,12 +6,16 @@ import json
 import os
 from pathlib import Path
 import queue
+import re
 import shlex
 import shutil
 import signal
+import socket
 import subprocess
 import sys
+import tempfile
 import threading
+import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -94,12 +98,12 @@ def session_branch(identity, external, clear=False):
 
 
 class Session(Bridge):
-    def __init__(self, thread, cwd, instructions, resumed, events, mode, restrictions, settings):
+    def __init__(self, thread, cwd, instructions, resumed, events, mode, restrictions, settings, ask_sock=None):
         super().__init__([
             "--resume" if resumed else "--session-id", thread,
             "--model", os.environ.get("HUB_MOD_ANTIGRAVITY_NAME", "claude-agy"),
             "--permission-mode", mode,
-            "--disallowedTools", "SendMessage", "ListAgents", "AskUserQuestion", *restrictions,
+            "--disallowedTools", "SendMessage", "ListAgents", *restrictions,
         ])
         self.cwd = cwd
         self.instr = instructions
@@ -107,6 +111,8 @@ class Session(Bridge):
         rule_path = deny.rules_path(self.uuid)
         protected = deny.read_rules(self.uuid)
         protected["project_settings"] = settings
+        if ask_sock:
+            protected["ask_sock"] = ask_sock
         store.write_json(rule_path, protected)
 
     def _read_core(self):
@@ -126,6 +132,8 @@ class Server:
         self.session = self.worker = self.turn = None
         self.external_thread = None
         self.tools = {}
+        self.ask_server = self.ask_sock = self.waiting_ask = None
+        self.deferred_result = self.pending_answer = None
 
     def send(self, obj):
         print(json.dumps(obj, ensure_ascii=False), file=self.stdout, flush=True)
@@ -145,7 +153,81 @@ class Server:
         self.notify("item/" + method, turnId=self.turn,
                     item={"id": uuid.uuid4().hex, "type": kind, **fields})
 
+    def _reply_ask(self, wait, payload):
+        conn = wait.get("conn") if wait else None
+        if conn is None:
+            return
+        wait["conn"] = None
+        try:
+            conn.sendall((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8"))
+        except OSError:
+            pass
+        try:
+            conn.close()
+        except OSError:
+            pass
+
+    def close_ask(self):
+        if self.waiting_ask:
+            self._reply_ask(self.waiting_ask, {"status": "error", "text": "Antigravity: сессия закрыта"})
+            self.waiting_ask = None
+        self.deferred_result = self.pending_answer = None
+        if self.ask_server is not None:
+            try:
+                self.ask_server.close()
+            except OSError:
+                pass
+            self.ask_server = None
+        if self.ask_sock:
+            try:
+                os.unlink(self.ask_sock)
+            except OSError:
+                pass
+            self.ask_sock = None
+
+    def open_ask(self, ident):
+        candidate = os.path.join(store.data_dir(), f"ask-{os.getpid()}-{ident[:8]}.sock")
+        if len(candidate.encode("utf-8")) > 95:
+            candidate = os.path.join(tempfile.gettempdir(), f"agy-ask-{os.getpid()}-{ident[:8]}.sock")
+        try:
+            os.unlink(candidate)
+        except OSError:
+            pass
+        srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        srv.bind(candidate)
+        os.chmod(candidate, 0o600)
+        srv.listen(4)
+        self.ask_server, self.ask_sock = srv, candidate
+        threading.Thread(target=self._accept_asks, args=(srv,), daemon=True).start()
+        return candidate
+
+    def _accept_asks(self, srv):
+        while True:
+            try:
+                conn, _ = srv.accept()
+            except OSError:
+                return
+            try:
+                conn.settimeout(1.0)
+                buf = bytearray()
+                while len(buf) < 65536:
+                    chunk = conn.recv(4096)
+                    if not chunk:
+                        break
+                    buf.extend(chunk)
+                    if b"\n" in buf:
+                        break
+                payload = json.loads(bytes(buf).splitlines()[0].decode("utf-8"))
+            except (OSError, ValueError, IndexError):
+                try:
+                    conn.close()
+                except OSError:
+                    pass
+                continue
+            self.events.put(("ask", (payload, conn)))
+
     def close(self):
+        self.close_ask()
         if self.worker is not None:
             self.session.q.put(("term",))
             self.worker.join()
@@ -197,8 +279,9 @@ class Server:
         except (OSError, ValueError, KeyError) as exc:
             return self.error(request, f"Не удалось сохранить ветку: {exc}")
         self.external_thread = thread
+        ask_sock = self.open_ask(internal)
         self.session = Session(internal, cwd, instructions, resumed, self.events, modes[policy],
-                               restrictions, rules.get("settings") or [])
+                               restrictions, rules.get("settings") or [], ask_sock=ask_sock)
         self.worker = threading.Thread(target=self.run_session, daemon=True)
         self.worker.start()
         self.reply(request, {"thread": {"id": thread}, "cwd": cwd, "model": self.session.model_name,
@@ -240,7 +323,49 @@ class Server:
         self.item("started", "userMessage", content=content)
         self.session.q.put(("core", {"type": "user", "message": {"content": content}}))
 
+    def _ask_request(self, payload, conn):
+        questions = payload.get("questions") if isinstance(payload, dict) else None
+        if not self.turn or not self.external_thread or not isinstance(questions, list) or not questions:
+            return self._reply_ask({"conn": conn}, {"status": "error", "text": "Antigravity: нет активного хода для вопроса"})
+        if self.waiting_ask:
+            return self._reply_ask({"conn": conn}, {"status": "error", "text": "Antigravity: предыдущий вопрос ещё ждёт ответа"})
+        rid = f"ask-{uuid.uuid4().hex[:12]}"
+        self.waiting_ask = {"id": rid, "questions": questions, "conn": conn, "deadline": time.monotonic() + 1.5}
+        self.send({"id": rid, "method": "item/tool/requestUserInput",
+                   "params": {"threadId": self.external_thread, "questions": questions}})
+
+    def on_client_response(self, msg):
+        wait = self.waiting_ask
+        if not wait or msg.get("id") != wait["id"]:
+            return
+        self.waiting_ask = None
+        if "error" in msg:
+            err = (msg.get("error") or {}).get("message") or "ошибка карточки вопроса"
+            if wait.get("conn") is not None:
+                return self._reply_ask(wait, {"status": "error", "text": err})
+            text = f"[Ошибка карточки вопроса]: {err}"
+        else:
+            answers = ((msg.get("result") or {}).get("answers") or {})
+            qs = wait["questions"]
+            if wait.get("conn") is not None:
+                texts = [str(a) for q in qs for a in ((answers.get(q["id"]) or {}).get("answers") or []) if a]
+                joined = "; ".join(texts)
+                status = "detached" if re.search(r"\bq\d+\b", joined) else "answered"
+                return self._reply_ask(wait, {"status": status, "text": joined})
+            lines = []
+            for q in qs:
+                vals = [str(a) for a in ((answers.get(q["id"]) or {}).get("answers") or []) if a]
+                lines.append(f"- {q['question']}: {', '.join(vals) if vals else 'нет ответа'}")
+            text = "[Ответ владельца на карточку вопроса]:\n" + "\n".join(lines)
+        if self.deferred_result is not None:
+            self.deferred_result = None
+            self.session.q.put(("core", {"type": "user", "message": {"content": [{"type": "text", "text": text}]}}))
+        else:
+            self.pending_answer = text
+
     def request(self, req):
+        if "method" not in req and "id" in req:
+            return self.on_client_response(req)
         method, p = req.get("method"), req.get("params") or {}
         if method == "initialize":
             self.reply(req, {"userAgent": "hub-antigravity/0.3.0"})
@@ -267,6 +392,16 @@ class Server:
             if self.turn and p.get("turnId") == self.turn:
                 ctl = {"type": "control_request", "request_id": "interrupt", "request": {"subtype": "interrupt"}}
                 self.session.q.put(("core", ctl))
+                if self.waiting_ask:
+                    self._reply_ask(self.waiting_ask, {"status": "error", "text": "прервано"})
+                    self.waiting_ask = None
+                self.pending_answer = None
+                if self.deferred_result is not None:
+                    self.deferred_result = None
+                    self.notify("turn/completed", turn={"id": self.turn, "status": "interrupted"})
+                    self.turn = None
+                    if self.pending:
+                        self.start_turn(self.pending.popleft())
             self.reply(req, {})
         elif method and "id" in req:
             self.error(req, f"Antigravity: {method} не поддерживается", -32601)
@@ -293,6 +428,14 @@ class Server:
                         item["error" if part.get("is_error") else "result"] = part.get("content")
                         self.notify("item/completed", turnId=self.turn, item=item)
         elif kind == "result":
+            if self.pending_answer is not None:
+                answer = self.pending_answer
+                self.pending_answer = None
+                self.session.q.put(("core", {"type": "user", "message": {"content": [{"type": "text", "text": answer}]}}))
+                return
+            if self.waiting_ask is not None:
+                self.deferred_result = msg
+                return
             turn = {"id": self.turn, "status": "failed" if msg.get("is_error") else "completed",
                     "durationMs": msg.get("duration_ms")}
             if msg.get("is_error"):
@@ -319,14 +462,29 @@ class Server:
         threading.Thread(target=self.read, daemon=True).start()
         try:
             while True:
-                kind, event = self.events.get()
+                wait = self.waiting_ask
+                if wait and wait.get("conn") is not None:
+                    left = max(0.0, wait["deadline"] - time.monotonic())
+                    try:
+                        kind, event = self.events.get(timeout=left)
+                    except queue.Empty:
+                        self._reply_ask(wait, {"status": "wait"})
+                        continue
+                else:
+                    kind, event = self.events.get()
                 if kind == "request":
                     self.request(event)
+                elif kind == "ask":
+                    self._ask_request(*event)
                 elif kind == "bridge":
                     self.on_bridge(event)
                 elif kind == "bridge_error":
                     if self.turn:
                         self.pending.clear()
+                        if self.waiting_ask:
+                            self._reply_ask(self.waiting_ask, {"status": "error", "text": f"Сбой моста: {event}"})
+                            self.waiting_ask = None
+                        self.deferred_result = self.pending_answer = None
                         self.on_bridge({"type": "result", "is_error": True, "result": f"Сбой моста Antigravity: {event}"})
                     return 1
                 else:

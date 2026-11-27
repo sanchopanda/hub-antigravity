@@ -211,3 +211,136 @@ class CodexBridge(unittest.TestCase):
             records = json.load(stream)
         for index in range(12):
             self.assertEqual(records[f"conversation-{index}"]["conv"], f"conversation-{index}")
+
+    def test_hub_rules_without_ask_ban_write_ask_sock(self):
+        result = self.send(1, "thread/start", {"cwd": self.sandbox.dir})
+        self.assertIn("result", result)
+        with open(os.path.join(self.sandbox.data, "codex-branches.json"), encoding="utf-8") as stream:
+            internal = json.load(stream)[UUID]["internal"]
+        with open(os.path.join(self.sandbox.data, "rules", internal + ".json"), encoding="utf-8") as stream:
+            rules = json.load(stream)
+        self.assertNotIn("ask_question", rules.get("tools") or [])
+        self.assertTrue(os.path.exists(rules["ask_sock"]))
+        import agy_guard
+        import store
+        with open(self.rules, "w", encoding="utf-8") as stream:
+            json.dump({"deny": ["AskUserQuestion"]}, stream)
+        restricted = self.send(2, "thread/start", {"cwd": self.sandbox.dir})
+        self.assertIn("result", restricted)
+        with open(os.path.join(self.sandbox.data, "codex-branches.json"), encoding="utf-8") as stream:
+            internal = json.load(stream)[UUID]["internal"]
+        with patch.dict(os.environ, self.sandbox.env(), clear=True):
+            store.set_conv(internal, conv="restricted-ask")
+            decision = agy_guard.decide({"conversationId": "restricted-ask",
+                                         "toolCall": {"name": "ask_question",
+                                                      "args": {"questions": [{"question": "Q?", "options": ["A"]}]}}})
+        self.assertEqual(decision["decision"], "deny")
+        self.assertIn("ask_question", decision["reason"])
+
+
+class CodexBridgeAsk(unittest.TestCase):
+    def setUp(self):
+        self.sandbox = Sandbox()
+        self.addCleanup(self.sandbox.cleanup)
+        import codex_bridge
+        import deny
+        import store
+        self.env_patch = patch.dict(os.environ, self.sandbox.env(), clear=True)
+        self.env_patch.start()
+        self.addCleanup(self.env_patch.stop)
+        self.out = []
+        self.srv = codex_bridge.Server()
+        self.srv.send = lambda obj: self.out.append(obj)
+        self.srv.external_thread = "thread-1"
+        self.srv.turn = "turn-1"
+        self.ask_sock = self.srv.open_ask(UUID)
+        self.addCleanup(self.srv.close_ask)
+        self.q = __import__("queue").Queue()
+        self.srv.session = type("DummySession", (), {"q": self.q, "uuid": UUID})()
+        rule_path = deny.rules_path(UUID)
+        os.makedirs(os.path.dirname(rule_path), exist_ok=True)
+        store.write_json(rule_path, {"tools": [], "commands": [], "paths": [],
+                                     "project_settings": [], "ask_sock": self.ask_sock})
+        store.set_conv(UUID, conv="conv-ask")
+
+    def _run_until(self, pred, timeout=3.0):
+        import threading
+        import time
+        stop = threading.Event()
+        def pump():
+            while not stop.is_set():
+                try:
+                    kind, ev = self.srv.events.get(timeout=0.05)
+                except __import__("queue").Empty:
+                    wait = self.srv.waiting_ask
+                    if wait and wait.get("conn") is not None and time.monotonic() >= wait["deadline"]:
+                        self.srv._reply_ask(wait, {"status": "wait"})
+                    continue
+                if kind == "ask":
+                    self.srv._ask_request(*ev)
+                elif kind == "request":
+                    self.srv.request(ev)
+                elif kind == "bridge":
+                    self.srv.on_bridge(ev)
+        t = threading.Thread(target=pump, daemon=True)
+        t.start()
+        end = time.monotonic() + timeout
+        try:
+            while time.monotonic() < end:
+                if pred():
+                    return True
+                time.sleep(0.02)
+            return False
+        finally:
+            stop.set()
+            t.join(timeout=1.0)
+
+    def test_ask_question_detached_card_through_bridge(self):
+        import agy_guard
+        import threading
+        got = {}
+        def call():
+            got["res"] = agy_guard.decide({
+                "conversationId": "conv-ask",
+                "toolCall": {"name": "ask_question",
+                             "args": {"questions": [{"question": "Выбрать?", "options": ["Да", "Нет"]}]}},
+            })
+        t = threading.Thread(target=call, daemon=True)
+        t.start()
+        self.assertTrue(self._run_until(lambda: any(m.get("method") == "item/tool/requestUserInput" for m in self.out)))
+        req = next(m for m in self.out if m.get("method") == "item/tool/requestUserInput")
+        self.srv.events.put(("request", {"id": req["id"],
+                                         "result": {"answers": {"q1": {"answers": ["Показана карточка q42"]}}}}))
+        self.assertTrue(self._run_until(lambda: "res" in got))
+        t.join(timeout=1.0)
+        self.assertEqual(got["res"]["decision"], "deny")
+        self.assertIn("q42", got["res"]["reason"])
+
+    def test_ask_question_wait_holds_turn_until_owner_answers(self):
+        import agy_guard
+        import threading
+        got = {}
+        def call():
+            got["res"] = agy_guard.decide({
+                "conversationId": "conv-ask",
+                "toolCall": {"name": "ask_question",
+                             "args": {"questions": [{"question": "Деплоим?", "options": ["Да", "Нет"]}]}},
+            })
+        t = threading.Thread(target=call, daemon=True)
+        t.start()
+        self.assertTrue(self._run_until(lambda: "res" in got, timeout=3.5))
+        t.join(timeout=1.0)
+        self.assertEqual(got["res"]["decision"], "deny")
+        self.assertIn("открыта", got["res"]["reason"])
+        req = next(m for m in self.out if m.get("method") == "item/tool/requestUserInput")
+        self.srv.events.put(("bridge", {"type": "result", "is_error": False, "duration_ms": 100}))
+        self._run_until(lambda: self.srv.deferred_result is not None)
+        self.assertFalse(any(m.get("method") == "turn/completed" for m in self.out))
+        self.srv.events.put(("request", {"id": req["id"],
+                                         "result": {"answers": {"q1": {"answers": ["Да"]}}}}))
+        self.assertTrue(self._run_until(lambda: not self.q.empty()))
+        kind, payload = self.q.get_nowait()
+        self.assertEqual(kind, "core")
+        self.assertIn("Деплоим?: Да", payload["message"]["content"][0]["text"])
+        self.srv.events.put(("bridge", {"type": "result", "is_error": False, "duration_ms": 50}))
+        self.assertTrue(self._run_until(lambda: any(m.get("method") == "turn/completed" for m in self.out)))
