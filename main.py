@@ -16,6 +16,7 @@ from core import hubmod  # noqa: E402
 
 import agycli as agy_cmd  # noqa: E402
 import handoff  # noqa: E402
+import live_stream  # noqa: E402
 import quota  # noqa: E402
 import setup as agy_setup  # noqa: E402
 import store  # noqa: E402
@@ -72,6 +73,11 @@ def launch_env(req):
 @hubmod.hook("cli")
 def cli(req):
     return agy_cmd.handle(req.get("args"), caller_owner=bool((req.get("caller") or {}).get("owner")))
+
+
+@hubmod.route("/stream")
+def stream(req):
+    return {"text": live_stream.read(req.query.get("session", ""))}
 
 
 @hubmod.hook("doctor")

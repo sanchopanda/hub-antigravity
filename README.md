@@ -97,6 +97,8 @@ hub antigravity doctor
 `quota.py`, `web/main.js`, `web/quota.css`, `store.py`, `route.py`, `deny.py`, `translate.py`, `hooks.py`, `bridge.py`,
 `handoff.py`, `agy_guard.py`, `deepseek_mcp.py`, `sweep.py`, `setup.py`, `bin/claude`, `bin/deepseek-ask`, `tests/`.
 
+Пока agy генерирует текст, модуль показывает поступивший фрагмент над полем ввода открытой сессии. Завершённые абзацы и итог сохраняются штатной лентой; временный текст хранится локально и исчезает после завершения, прерывания или устаревания. Для чтения текста страницей модулю требуется `http`.
+
 ## Проверка
 - Состояние в живом хабе: `hub antigravity status` и `hub antigravity doctor`.
 - Машиночитаемое состояние для оркестратора провайдеров: `hub antigravity state --json` — квота Gemini,

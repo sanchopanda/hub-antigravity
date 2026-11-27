@@ -1,3 +1,4 @@
+import registerStream from "./stream.js";
 import registerModels from "./models.js";
 
 // Antigravity quota widget in the hub topbar: Gemini and third-party 5h/weekly remaining %,
@@ -143,6 +144,7 @@ function titleLine(label, item, s) {
 
 export default function register(hub) {
   registerModels(hub);
+  registerStream(hub, isAgyModel);
   const s = STR[hub.lang] || STR.en;
   hub.addStyle("quota.css");
   hub.addSlot("topbar", {

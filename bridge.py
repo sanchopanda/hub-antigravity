@@ -30,6 +30,7 @@ import quota  # noqa: E402
 import route  # noqa: E402
 import store  # noqa: E402
 import translate  # noqa: E402
+import live_stream  # noqa: E402
 
 KEEPALIVE_S = 60     # пока agy молчит во время хода, раз в минуту строка `system/status`: ядро не считает сессию зависшей
 SLASH = ("/compact", "/recap", "/clear", "/model", "/effort")
@@ -339,6 +340,10 @@ class Bridge:
         else:
             # у команды метка ядра стоит в конце строки (flow.py): agy получает чистую команду
             joined = re.sub(r"\s*\[hub:m\d+[^\]\n]*\]\s*$", "", joined).strip()
+        try:
+            live_stream.write(self.session, "")
+        except OSError:
+            pass
         self.turn = translate.Turn(self.uuid, self.model_name, self.cum)
         self.turn.request, self.turn.began, self.turn.sent = joined, self.mono(), self.clock()
         self.turn.slash = slash           # /compact или /recap: ядро ждёт result с num_turns 0, а не ход
@@ -425,6 +430,12 @@ class Bridge:
             return   # событие вне хода (после прерывания): пропускаем
         for msg in self.turn.feed(ev):
             self.emit(msg)
+        if ev.get("event") == "step_update" and ev.get("step_type") == "agent_response":
+            try:
+                pending = "".join(self.turn.texts.get(ev.get("step_index", 0), []))
+                live_stream.write(self.session, pending)
+            except OSError:
+                pass   # показ предварительного текста не должен прерывать ход
         if ev.get("event") == "init" and self.turn.conv:
             store.set_conv(self.uuid, conv=self.turn.conv, session=self.session, model=self.model_name,
                            agy_model=self.model_id)
@@ -506,6 +517,10 @@ class Bridge:
                 "message": {"role": "assistant", "model": self.model_name, "content": [{"type": "text", "text": text}]}}
 
     def turn_done(self):
+        try:
+            live_stream.write(self.session, "")
+        except OSError:
+            pass
         if not getattr(self.turn, "slash", None):
             self.hook("Stop")   # у /compact и /recap нет хуков хода: это не ход
         self.turn = None
