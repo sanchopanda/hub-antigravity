@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))   # python -I н�
 import deny  # noqa: E402
 import handoff  # noqa: E402
 import hooks  # noqa: E402
+import quota  # noqa: E402
 import route  # noqa: E402
 import store  # noqa: E402
 import translate  # noqa: E402
@@ -96,8 +97,15 @@ class Bridge:
         self.model_name = self.p["model"] or "claude-agy"
         # "default" — метка модуля для «agy по умолчанию» (пустую строку ядро вырезает из окружения): флаг --model не нужен
         model = self.env.get("HUB_MOD_ANTIGRAVITY_MODEL", "")
-        self.model_id = "" if model in ("", "default") else model
         self.cfg = store.settings()
+        self.base_model = "" if model in ("", "default") else model
+        # модель на ход выбирается по живой квоте групп (§2): настроенная, пока у её группы есть запас, иначе запасная
+        self.primary_model = self.base_model or str(self.cfg.get("primary_model") or "")
+        self.fallback_model = str(self.cfg.get("fallback_model") or "")
+        self.model_id = self.primary_model
+        self.turn_group = None
+        self.child_model = None
+        self.quota_retry = 0.0
         self.stdin, self.stdout = stdin or sys.stdin, stdout or sys.stdout
         self.agy_path = agy or self.env.get("HUB_MOD_ANTIGRAVITY_AGY") or shutil.which("agy", path=self.env.get("PATH")) \
             or os.path.expanduser("~/.local/bin/agy")
@@ -263,11 +271,36 @@ class Bridge:
                    "usage": {"input_tokens": 0, "output_tokens": 0}})
 
     # -- ход -------------------------------------------------------------------------------------------
+    def quota_record(self):
+        """Живые данные /usage: кэш модуля (≤ 5 мин), иначе один опрос agy. None — данных нет (не мешаем ходу)."""
+        now = self.clock()
+        rec = quota.load_cache(now=now)
+        if rec is not None:
+            return rec
+        if now < self.quota_retry:
+            return None
+        try:
+            rec = quota.fetch(agy=self.agy_path, now=now)
+        except Exception:  # noqa: BLE001 — сбой /usage не должен ломать ход
+            rec = None
+        if rec and rec.get("ok"):
+            quota.save_cache(rec)
+            return rec
+        self.quota_retry = now + quota.REFRESH_FAIL
+        return None
+
+    def choose_model(self):
+        """(id модели agy, текст отказа или None) по живой квоте групп и настройкам hub.json."""
+        primary = self.primary_model or str(self.cfg.get("primary_model") or "")
+        if not quota.group_of_model(primary):
+            return primary, None          # модель не из известных групп (ручной id): квоту не спрашиваем
+        return quota.pick_model(self.quota_record(), primary, self.fallback_model, store.blocks(self.clock()))
+
     def gate(self):
-        """Текст отказа начать ход или None (§3, §4): блок, исполнитель, тихие часы, потолки, места."""
+        """Текст отказа начать ход или None (§3, §4): блок группы, исполнитель, тихие часы, потолки, места."""
         if self.instr and route.EXECUTOR_MARK in self.instr and not self.cfg.get("executors"):
             return "Antigravity: исполнители на claude-agy выключены (hub.json, antigravity.executors)"
-        b = store.block(self.clock())
+        b = store.block(self.turn_group, self.clock())
         if b:
             return b.get("text") or "Antigravity: блок"
         if store.in_quiet(self.cfg.get("quiet"), self.clock()):
@@ -287,8 +320,13 @@ class Bridge:
 
     def start_turn(self, texts, slash=None):
         self.cfg = store.settings()      # настройки (тихие часы, потолки, исполнители) — по состоянию на начало хода
+        self.primary_model = self.base_model or str(self.cfg.get("primary_model") or "")
+        self.fallback_model = str(self.cfg.get("fallback_model") or "")
         joined = "\n".join(texts)
-        why = self.gate()
+        model, why = self.choose_model()     # модель хода — по живой квоте групп; от неё зависит, чей блок смотрит gate()
+        self.model_id = model if model is not None else self.primary_model
+        self.turn_group = quota.group_of_model(model) if model is not None else None
+        why = why or self.gate()
         if why and why.startswith("Antigravity занят:"):
             self.waiting_turn = (list(texts), slash)
             if self.waiting_since is None:
@@ -340,10 +378,14 @@ class Bridge:
 
     def ensure_child(self):
         if self.child_alive():
-            return
+            if self.child_model == self.model_id:
+                return
+            # модель сменилась по квоте: закрываем процесс чисто, беседу продолжаем через --conversation (живая проба 27.11)
+            self.stop_child(graceful=True)
         self.child = None
         rec = store.conv(self.uuid)
         argv = route.agy_argv(self.agy_path, self.p, self.model_id, rec.get("conv"))
+        self.child_model = self.model_id
         self.cum, self.stderr_tail = {}, deque(maxlen=20)
         self.turn.prev_cum = {}
         self.gen += 1
@@ -384,7 +426,8 @@ class Bridge:
         for msg in self.turn.feed(ev):
             self.emit(msg)
         if ev.get("event") == "init" and self.turn.conv:
-            store.set_conv(self.uuid, conv=self.turn.conv, session=self.session, model=self.model_name)
+            store.set_conv(self.uuid, conv=self.turn.conv, session=self.session, model=self.model_name,
+                           agy_model=self.model_id)
         if ev.get("event") == "result":
             self.finish_result()
 
@@ -410,16 +453,25 @@ class Bridge:
         return self.finish_error(f"Antigravity: ошибка — {route.scrub(text) or status.lower() or 'без текста'}", kind="error")
 
     def block_for(self, verdict, raw):
-        """Записать блок по ошибке agy и вернуть текст результата хода (§3.1, §3.2)."""
+        """Записать блок по ошибке agy и вернуть текст результата хода (§3.1, §3.2).
+
+        Вход общий для аккаунта — блок всем группам. Квота — только группе модели, на которой пришла ошибка: вторая группа
+        живёт дальше, и следующий ход пойдёт на запасной модели (выбор в choose_model)."""
         now = self.clock()
         if verdict == "auth":
             store.set_block("auth", now + 30 * 86400, "Antigravity: нужен вход. Запусти `agy` в Терминале и войди, затем `hub antigravity unblock`", now)
             return "Antigravity: нужен вход. Запусти `agy` в Терминале и войди"
+        group = self.turn_group
+        label = (store.GROUP_LABEL.get(group, "") + " ") if group else ""
         wait = route.reset_after(raw + " " + " ".join(self.stderr_tail)) or self.cfg["block_default_s"]
         until = now + wait
         hhmm = time.strftime("%H:%M", time.localtime(until))
-        text = f"Antigravity: квота до {hhmm}" if route.reset_after(raw) else f"Antigravity: квота кончилась, проверю после {hhmm}"
-        store.set_block("quota", until, text, now)
+        text = f"Antigravity: квота {label}до {hhmm}" if route.reset_after(raw) \
+            else f"Antigravity: квота {label}кончилась, проверю после {hhmm}"
+        other = next((g for g in store.GROUPS if g != group), None) if group else None
+        if other and store.block(other, now) is None and quota.group_room(self.quota_record(), other) is True:
+            text += f"; следующий ход пойдёт на моделях {store.GROUP_LABEL[other]}"
+        store.set_block("quota", until, text, now, group=group)
         return text
 
     def finish_error(self, text, kind="error", usage=None):
@@ -444,7 +496,7 @@ class Bridge:
         if not is_error:
             fields = {"last_agy_at": self.clock(), "instr": getattr(t, "instr_hash", "")}
             if t.conv:
-                fields.update(conv=t.conv, session=self.session, model=self.model_name)
+                fields.update(conv=t.conv, session=self.session, model=self.model_name, agy_model=self.model_id)
             store.set_conv(self.uuid, **fields)
         self.turn_done()
 
@@ -464,7 +516,8 @@ class Bridge:
             self.stop_child()    # блок: процесс agy не держим и место отдаём
 
     def block_active(self):
-        return store.block(self.clock()) is not None
+        """Блок группы текущего хода: только он повод закрыть процесс agy (другая группа может работать)."""
+        return store.block(self.turn_group, self.clock()) is not None
 
     def on_agy_eof(self, code):
         err = " ".join(self.stderr_tail)

@@ -34,9 +34,27 @@ def status(cfg=None, now=None):
     cfg = cfg or store.settings()
     now = time.time() if now is None else now
     lines = []
-    b = store.block(now)
-    lines.append(f"вход / квота: блок до {fmt_time(b['until'])} — {b.get('text') or b.get('reason')}" if b
-                 else "вход / квота: блока нет")
+    bs = store.blocks(now)
+    if not bs:
+        lines.append("вход / квота: блока нет")
+    elif len(bs) == len(store.GROUPS) and len({b.get("reason") for b in bs.values()}) == 1:
+        b = next(iter(bs.values()))   # вход или квота обеих групп: один общий блок
+        lines.append(f"вход / квота: блок до {fmt_time(b['until'])} — {b.get('text') or b.get('reason')}")
+    else:
+        for g in store.GROUPS:
+            b = bs.get(g)
+            label = store.GROUP_LABEL[g]
+            lines.append(f"блок {label}: " + (f"до {fmt_time(b['until'])} — {b.get('text') or b.get('reason')}"
+                                              if b else "нет"))
+    import quota as agy_quota   # quota импортирует agycli: здесь, а не вверху файла
+    rec = agy_quota.load_cache(now=now)
+    if rec:
+        parts = []
+        for g in store.GROUPS:
+            gg = rec.get(agy_quota.QKEY[g]) if isinstance(rec.get(agy_quota.QKEY[g]), dict) else {}
+            wins = [f"{w} {gg[w]['pct']}%" for w in ("h5", "weekly") if isinstance(gg.get(w), dict)]
+            parts.append(f"{store.GROUP_LABEL[g]}: " + (", ".join(wins) if wins else "—"))
+        lines.append("квота (agy /usage): " + "; ".join(parts))
     slots = store.slot_report(cfg["max_sessions"])
     lines.append("места agy: " + ", ".join(f"{n}: {name or 'свободно'}" for n, name in slots))
     for label, win in (("5 ч", store.WINDOW_5H), ("неделя", store.WINDOW_WEEK)):
@@ -107,8 +125,11 @@ def doctor(cfg=None, run=subprocess.run):
     real = agy_setup.real_claude_target()
     out.append({"name": "antigravity: настоящий claude", "ok": bool(real),
                 "detail": real or "исполняемый файл Claude Code не найден"})
-    b = store.block()
-    out.append({"name": "antigravity: блок", "ok": b is None, "detail": (b.get("text") or b.get("reason")) if b else "нет"})
+    bs = store.blocks()
+    for g in store.GROUPS:
+        b = bs.get(g)
+        out.append({"name": f"antigravity: блок {store.GROUP_LABEL[g]}", "ok": b is None,
+                    "detail": (b.get("text") or b.get("reason")) if b else "нет"})
     mode = None
     keys = os.path.join(store.config_dir(), "engines.json")
     if not os.path.exists(keys):
@@ -200,7 +221,8 @@ def state_payload(now=None):
     now = time.time() if now is None else float(now)
     cfg = store.settings()
     cached = quota.load_cache(now=now)
-    blocked = store.block(now)
+    group_blocks = store.blocks(now)
+    blocked = group_blocks.get("gemini")      # поле для оркестратора: «исчерпание» — это группа Gemini; блоки по группам — ниже
     gemini = (cached or {}).get("gemini") or {}
     exhausted = bool(blocked and blocked.get("reason") == "quota")
     if cached:
@@ -213,6 +235,9 @@ def state_payload(now=None):
         "ok": True,
         "exhausted": exhausted,
         "blocked": blocked,
+        "blocks": group_blocks,
+        "primary_model": cfg.get("primary_model"),
+        "fallback_model": cfg.get("fallback_model"),
         "quota": cached,
         "models": cfg["models"],
         "catalog": model_catalog(now=now),

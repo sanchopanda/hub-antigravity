@@ -408,9 +408,9 @@ class Gates(Base):
         self.assertTrue(r["is_error"])
         self.assertRegex(r["result"], r"Antigravity: квота до \d\d:\d\d")
         self.assertFalse(route.CORE_TEXT.search(r["result"]))
-        st = json.load(open(os.path.join(self.sb.data, "state.json")))
-        self.assertEqual(st["reason"], "quota")
-        self.assertAlmostEqual(st["until"] - st["at"], 90 * 60, delta=2)     # срок из текста ошибки agy
+        st = json.load(open(os.path.join(self.sb.data, "state.json")))["blocks"]
+        self.assertEqual({r["reason"] for r in st.values()}, {"quota"})      # группа модели не известна — блок всех групп
+        self.assertAlmostEqual(st["gemini"]["until"] - st["gemini"]["at"], 90 * 60, delta=2)   # срок из текста ошибки agy
         p.user("ещё")
         r2 = p.wait_results(2)[1]
         self.assertIn("квота", r2["result"])
@@ -424,7 +424,7 @@ class Gates(Base):
         self.assertIn("нужен вход", r["result"])
         self.assertIn("agy", r["result"])
         self.assertFalse(route.CORE_TEXT.search(r["result"]), "ядро сочло бы это отказом входа Claude")
-        self.assertEqual(json.load(open(os.path.join(self.sb.data, "state.json")))["reason"], "auth")
+        self.assertEqual({r["reason"] for r in json.load(open(os.path.join(self.sb.data, "state.json")))["blocks"].values()}, {"auth"})
         p.user("ещё")
         r2 = p.wait_results(2)[1]
         self.assertIn("нужен вход", r2["result"])

@@ -25,8 +25,15 @@ def log(rec):
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
+def scenario_name(argv):
+    """FAKE_AGY_BY_MODEL — JSON {id модели: сценарий}: ход на этой модели играет свой сценарий (иначе FAKE_AGY_SCENARIO)."""
+    by = json.loads(os.environ.get("FAKE_AGY_BY_MODEL") or "{}")
+    model = argv[argv.index("--model") + 1] if "--model" in argv and argv.index("--model") + 1 < len(argv) else ""
+    return by.get(model) or os.environ.get("FAKE_AGY_SCENARIO", "text")
+
+
 def load():
-    name = os.environ.get("FAKE_AGY_SCENARIO", "text")
+    name = scenario_name(sys.argv[1:])
     pre, turns, cur = [], {}, None
     with open(os.path.join(HERE, "streams", f"{name}.jsonl"), encoding="utf-8") as f:
         for line in f:

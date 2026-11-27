@@ -5,8 +5,9 @@
 Команда `hub antigravity sweep` (точка cli модуля) только показывает план (`--dry` по умолчанию в ней).
 
 Правила:
-- блок есть (квота или вход, state.json, срок не вышел): каждую живую сессию на модели с agy — на то, куда сейчас ведёт
-  лестница daybudget (`hub budget --json`, поле step): work и conduit — sonnet, deepseek — claude-deepseek. Ступень wait
+- agy закрыт целиком (блок обеих групп квоты или вход, state.json, срок не вышел): каждую живую сессию на модели с agy —
+  на то, куда сейчас ведёт лестница daybudget (`hub budget --json`, поле step): work и conduit — sonnet, deepseek —
+  claude-deepseek. Блок одной группы сессии не трогает: мост уводит ход на запасную модель второй группы. Ступень wait
   (все заняты) — никого не трогаем: уходить некуда. В removed.json пишется «откуда увели»: {сессия: {from, to, at, reason}}.
 - блока нет (кончился срок или снят `hub antigravity unblock`): сессии из removed.json, чья модель всё ещё та, что
   поставил sweep, возвращаются на прежнюю; запись снимается. Ручной выбор владельца не перебивается: сменил модель сам —
@@ -109,9 +110,9 @@ def one_pass(argv, runner=run, now=None):
         print("hub status --json: снимок не прочитался")
         return 1
     rec = store.block_record()
-    block = store.block(now)
-    if rec and not block and not all_back and not dry:
-        store.clear_block()          # срок вышел: блок снимаем, сессии вернёт этот же проход
+    block = store.block(now=now) if store.all_blocked(now) else None
+    if rec and not all_back and not dry:
+        store.clear_expired(now)     # сроки вышли: записи снимаем, сессии вернёт этот же проход
     target, step = ladder_target(runner) if block else (None, "—")
     if block and not target:
         print(f"блок есть ({block.get('reason')}), но лестница на ступени «{step}»: уходить некуда — никого не трогаю")

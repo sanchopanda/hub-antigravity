@@ -19,7 +19,7 @@ hub antigravity doctor
 в `$HUB_MOD_ANTIGRAVITY_ROOT/codex_bridge.py`. При обновлении модуль переносит установленные записи хука
 и MCP в конфигурации agy на актуальную версию.
 
-Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.3.12 — модуль включён в хабе (`HUB_CLAUDE` в службе,
+Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.4.0 — модуль включён в хабе (`HUB_CLAUDE` в службе,
 `agy 1.5.18`, `setup` выполнен). Скиллы agy настроены глобально (`~/.gemini/config/skills.json`), исполнители и
 мини-хабы идут через мост, их запреты держит хук agy; в верхней полосе страницы хаба работает веб-виджет остатка квоты.
 
@@ -56,6 +56,27 @@ hub antigravity doctor
   `conversationId` и обходят правила сессии, `send_message` (достаёт до чужих бесед `agy` по `conversationId`),
   а также запись в сам слой запретов (`rules/`, `~/.gemini/config`).
   Ручной `agy` владельца хук не трогает. Работает и на новой сессии, и после `--resume` (передача от Claude → agy и повторный запуск).
+- **Квота по группам моделей (0.4.0).** У agy две группы с отдельными окнами 5 ч и неделя: `gemini` (модели `gemini-*`,
+  оркестраторы) и `3p` (`claude-opus-5-5-*`, `claude-sonnet-5-5-*`, `gpt-oss-120b-medium`). Блок (`state.json`,
+  `{"blocks": {gemini: …, 3p: …}}`) хранит группу. Ошибка квоты закрывает только группу той модели, на которой пришла
+  (мост знает её по id модели хода); вход (`auth`) закрывает обе группы. Старый `state.json` с одним блоком читается как
+  блок обеих групп. Перед каждым ходом мост выбирает модель по живой квоте (`quota.pick_model`; данные — кэш
+  `quota.json` ≤ 5 мин, иначе один вызов `agy /usage`):
+  1. основная модель — id из `antigravity.models` (у `claude-agy` сейчас `gemini-4-hydrogen-high`; для «default» —
+     `antigravity.primary_model`, по умолчанию `gemini-4-hydrogen-high`), пока у её группы есть запас — оба окна больше нуля
+     и нет действующего блока группы;
+  2. иначе — `antigravity.fallback_model` (по умолчанию `claude-sonnet-5-5-high`), если у его группы есть запас;
+  3. обе группы пусты — отказ без запуска agy: «Antigravity: квота кончилась в обеих группах (Gemini до 18:13, Claude/GPT до
+     18:08)» — ближайшие сбросы по `/usage` или по сроку блока. Нет данных о квоте — модель не меняем.
+  Сессии с agy при блоке одной группы лестница daybudget не трогает: `sweep.py` уводит их только когда закрыты обе группы
+  (или вход) и возвращает, как только открылась любая. `hub antigravity status` показывает `блок Gemini` и `блок Claude/GPT`
+  отдельно (одной строкой, если закрыто всё) и остаток окон из `/usage`; `doctor` — по строке на группу; `unblock` снимает
+  все блоки. `owner.notify` о блоке уходит по разу на группу.
+  **Смена модели и беседа.** При смене модели между ходами мост закрывает процесс agy (чистый конец stdin) и запускает новый
+  с `--conversation <conv>` и новым `--model`: беседа продолжается, а не начинается заново. Проверено живьём на agy 1.5.18
+  27.11.2026: беседа, начатая на `claude-sonnet-5-5-high`, продолжилась на `gpt-oss-120b-medium` и на
+  `gemini-4-hydrogen-high` — модель помнила факт из первого хода, `conversation_id` не менялся. Новая беседа не нужна.
+  **Срок из ошибки.** Живой 429 пишет срок слитно («Resets in 35m32s») — `route.reset_after` читает и такую запись.
 - `deepseek_mcp.py` — MCP-сервер `deepseek_ask`; запасной путь без MCP — `bin/deepseek-ask`. Ключ берётся из
   `engines.json` или файла `deepseek-key` в конфигурации хаба с правами `0600`. Деньги — `hub budget --json`,
   потолок инструмента `antigravity.deepseek.day_usd` (0,5 $).
@@ -67,7 +88,7 @@ hub antigravity doctor
   адаптер отказывает в запуске. Связные сессии также не запускаются через agy.
 - `quota.py` + `web/main.js` + `web/quota.css` — веб-виджет квоты Antigravity в верхней полосе страницы хаба рядом с
   балансом DeepSeek (ключ снимка `antigravity_quota`, слот `topbar`). Фоновый поток опрашивает `agy -p "/usage" --output-format json`
-  с кэшем не дольше 5 минут (`moddata/antigravity/quota.json`), показывает окна Gemini и Claude/GPT за 5 часов и неделю
+  с кэшем не дольше 5 минут (`moddata/antigravity/quota.json`; те же данные читает выбор модели), показывает окна Gemini и Claude/GPT за 5 часов и неделю
   (процент остатка и время сброса по Москве; при отсутствии времени сброса оно не выводится). Если `agy` не ответил
   или кэш устарел — показывает прочерк `—`, не ошибку. Лимит основного движка хаб показывает отдельно.
 
@@ -81,7 +102,8 @@ hub antigravity doctor
 - Машиночитаемое состояние для оркестратора провайдеров: `hub antigravity state --json` — квота Gemini,
   исчерпание, блокировка, модели, места и их занятость.
 - Тесты модуля (гонять здесь со снятыми `ANTHROPIC_*` и `CLAUDE_CODE_OAUTH_TOKEN`):
-  `cd ~/.hub-personal/ext/antigravity/tests && env -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_API_KEY -u ANTHROPIC_BASE_URL -u CLAUDE_CODE_OAUTH_TOKEN python3 -W ignore -m unittest test_module test_bridge test_shim test_deepseek test_stand test_quota`
+  `cd ~/.hub-personal/ext/antigravity/tests && env -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_API_KEY -u ANTHROPIC_BASE_URL -u CLAUDE_CODE_OAUTH_TOKEN python3 -W ignore -m unittest test_module test_bridge test_shim test_deepseek test_stand test_quota test_groups`
+  (на домашнем ПК без ядра хаба падают `test_module`, `test_stand`, манифест в `test_quota` и один тест в `test_deepseek` — их гонять здесь)
 - Процесс модуля с ядром: `~/.hub-personal/bin/python3 -W ignore ~/.hub-personal/scratch/modules-back/check_antigravity.py`
 - Стенды соседей: `check_daybudget.py`, `check_switch.py`, `check_poolpass.py` там же.
 

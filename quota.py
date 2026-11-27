@@ -79,6 +79,76 @@ def _bucket_window(bucket):
     return None
 
 
+# Группа блока (store.GROUPS) -> ключ в записи квоты (/usage; ключ claude_gpt остался от виджета, на нём держатся страница и кэш)
+QKEY = {"gemini": "gemini", "3p": "claude_gpt"}
+
+
+def group_of_model(model_id):
+    """Группа квоты модели agy: "gemini" | "3p" | None (модель не из известных групп). Пустой id — agy по умолчанию, Gemini."""
+    m = str(model_id or "").strip().lower()
+    if not m:
+        return "gemini"
+    if "gemini" in m:
+        return "gemini"
+    if "claude" in m or "gpt" in m or "oss" in m:
+        return "3p"
+    return None
+
+
+def _group_rec(rec, group):
+    g = rec.get(QKEY.get(group, group)) if isinstance(rec, dict) and rec.get("ok") else None
+    return g if isinstance(g, dict) else None
+
+
+def group_room(rec, group):
+    """Есть ли запас в группе: True/False; None — данных нет (кэш пуст или окна не разобраны). Ноль любого окна — нет."""
+    g = _group_rec(rec, group)
+    if g is None:
+        return None
+    vals = [b for b in (g.get("h5"), g.get("weekly")) if isinstance(b, dict) and _num(b.get("pct"))]
+    return all(float(b["pct"]) > 0 for b in vals) if vals else None
+
+
+def group_reset(rec, group):
+    """Ближайший названный agy сброс группы (unix-секунды) или None."""
+    g = _group_rec(rec, group)
+    if g is None:
+        return None
+    ts = [b["reset_at"] for b in g.values() if isinstance(b, dict) and _num(b.get("reset_at"))]
+    return min(ts) if ts else None
+
+
+def pick_model(rec, primary, fallback, blocked=None):
+    """Модель agy по живой квоте: (модель, None) или (None, текст отказа).
+
+    Группа настроенной модели с запасом — берём её; иначе — запасная модель, если у её группы есть запас.
+    blocked — {группа: запись блока} из store.blocks(): группа с блоком не берётся, даже если кэш /usage ещё показывает запас.
+    Данных о квоте нет и блока нет — не мешаем: берём настроенную модель."""
+    primary, fallback = str(primary or ""), str(fallback or "")
+    blocked = blocked or {}
+    g1, g2 = group_of_model(primary), group_of_model(fallback)
+    if not g1:
+        return primary, None
+
+    def open_(g):
+        return g not in blocked and group_room(rec, g) is not False
+
+    if open_(g1):
+        return primary, None
+    other = bool(fallback) and bool(g2) and g2 != g1
+    if other and open_(g2):
+        return fallback, None
+    groups = [g1, g2] if other else [g1]
+    times = []
+    for g in groups:
+        ts = [t for t in (group_reset(rec, g), float((blocked.get(g) or {}).get("until") or 0) or None) if t]
+        if ts:
+            times.append(f"{store.GROUP_LABEL.get(g, g)} до {time.strftime('%H:%M', time.localtime(min(ts)))}")
+    text = "Antigravity: квота кончилась в обеих группах" if other \
+        else f"Antigravity: квота {store.GROUP_LABEL.get(g1, g1)} кончилась"
+    return None, text + (f" ({', '.join(times)})" if times else "")
+
+
 def _loads_json(text):
     if not isinstance(text, str) or not text.strip():
         return None

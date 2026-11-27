@@ -83,18 +83,20 @@ NOTIFIED = "notified"
 
 
 def watch_once(now=None):
-    """Новый блок — один owner.notify на блок (dedup_key по времени записи). Возвращает отправленное."""
-    rec = store.block(now)
-    if not rec:
-        return None
-    key = f"antigravity-{rec['reason']}:{int(rec.get('at') or 0)}"
-    if hubmod.state.get(NOTIFIED) == key:
-        return None
-    hubmod.fact("owner.notify", {"title": "Antigravity", "text": rec.get("text") or "блок Antigravity",
-                                 "id": f"antigravity-{rec['reason']}", "topic": "Antigravity", "urgency": "later"},
-                dedup_key=key)
-    hubmod.state.set(NOTIFIED, key)
-    return key
+    """Новый блок группы — один owner.notify на него (dedup_key по времени записи). Возвращает отправленные ключи."""
+    sent = []
+    for group, rec in store.blocks(now).items():
+        key = f"antigravity-{rec['reason']}-{group}:{int(rec.get('at') or 0)}"
+        mark = f"{NOTIFIED}:{group}"
+        if hubmod.state.get(mark) == key:
+            continue
+        label = store.GROUP_LABEL.get(group, group)
+        hubmod.fact("owner.notify", {"title": f"Antigravity ({label})", "text": rec.get("text") or "блок Antigravity",
+                                     "id": f"antigravity-{rec['reason']}-{group}", "topic": "Antigravity", "urgency": "later"},
+                    dedup_key=key)
+        hubmod.state.set(mark, key)
+        sent.append(key)
+    return sent
 
 
 def quota_loop():

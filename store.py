@@ -18,6 +18,8 @@ DEFAULTS = {
     "executors": True,         # исполнители на claude-agy: разрешены владельцем 27.11.2026 (запреты держит deny.py + хук)
     "caps": {"turns_5h": None, "tokens_5h": None, "tokens_week": None},
     "fallback": "ladder",
+    "primary_model": "gemini-4-hydrogen-high",       # модель group Gemini, пока есть запас (слово владельца 27.11: hydrogen)
+    "fallback_model": "claude-sonnet-5-5-high",      # модель другой группы, когда Gemini исчерпан (§2)
     "idle_limit_s": 1200,      # agy молчит дольше — процесс снимаем, ход кончается ошибкой
     "block_default_s": 3600,   # блок по квоте без срока в ошибке
     "deepseek": {"model": "flash", "max_tokens": 2000, "max_tokens_hard": 8000, "day_usd": 0.5},
@@ -123,36 +125,88 @@ def is_agy_model(model, cfg=None):
 
 
 # --- блок (квота / вход) -------------------------------------------------------------------------------------------
+# У agy две группы моделей с отдельными окнами квоты (Gemini и Claude/GPT — "3p"). Ошибка квоты одной группы закрывает
+# только её: вторая работает дальше. Ключи групп — quota.GROUPS (здесь же, чтобы state.json читался без quota).
+GROUPS = ("gemini", "3p")
+GROUP_LABEL = {"gemini": "Gemini", "3p": "Claude/GPT"}
+
 
 def state_path():
     return os.path.join(data_dir(), "state.json")
 
 
-def block(now=None):
-    """Действующий блок {until, reason, text, at} или None. Просроченный — None (файл не трогаем: его чистит unblock/sweep)."""
+def _records():
+    """{группа: запись} из state.json, просроченные тоже. Старый формат (один блок на весь agy) — блок всех групп."""
     st = read_json(state_path())
+    recs = st.get("blocks")
+    if isinstance(recs, dict):
+        return {g: r for g, r in recs.items() if isinstance(r, dict) and r.get("reason")}
+    if st.get("reason"):
+        return {g: st for g in GROUPS}
+    return {}
+
+
+def blocks(now=None):
+    """Действующие блоки по группам: {gemini: запись, 3p: запись}. Просроченные сюда не входят."""
     now = time.time() if now is None else now
-    if st.get("reason") and float(st.get("until") or 0) > now:
-        return st
-    return None
+    return {g: r for g, r in _records().items() if float(r.get("until") or 0) > now}
 
 
-def set_block(reason, until, text, now=None):
+def block(group=None, now=None):
+    """Действующий блок {until, reason, text, at, group} или None. group=None — любой блок (старый смысл).
+    Просроченный — None (файл не трогаем: его чистит unblock/sweep)."""
+    got = blocks(now)
+    if group is not None:
+        return got.get(group)
+    return next(iter(got.values()), None)
+
+
+def all_blocked(now=None):
+    """agy закрыт целиком: блок есть у всех групп (общий вход или квота обеих групп)."""
+    return set(blocks(now)) >= set(GROUPS)
+
+
+def set_block(reason, until, text, now=None, group=None):
+    """Записать блок. group=None — на весь agy (вход), иначе только этой группе квоты. Чужие группы не трогаем."""
     now = time.time() if now is None else now
-    write_json(state_path(), {"reason": reason, "until": float(until), "text": text, "at": now})
+    recs = _records()
+    for g in (GROUPS if group is None else (group,)):
+        recs[g] = {"reason": reason, "until": float(until), "text": text, "at": now, "group": g}
+    write_json(state_path(), {"blocks": recs})
 
 
-def clear_block():
+def clear_block(group=None):
+    """Снять блок: group=None — все (unblock), иначе только этой группы."""
+    recs = _records()
+    if group is not None:
+        if group not in recs:
+            return
+        recs.pop(group)
+        if recs:
+            write_json(state_path(), {"blocks": recs})
+            return
     try:
         os.unlink(state_path())
     except OSError:
         pass
 
 
+def clear_expired(now=None):
+    """Убрать просроченные записи, действующие оставить (sweep зовёт каждый проход)."""
+    now = time.time() if now is None else now
+    recs = _records()
+    alive = {g: r for g, r in recs.items() if float(r.get("until") or 0) > now}
+    if len(alive) == len(recs):
+        return
+    if alive:
+        write_json(state_path(), {"blocks": alive})
+    else:
+        clear_block()
+
+
 def block_record():
-    """Блок как записан, просроченный тоже (sweep по нему возвращает сессии)."""
-    st = read_json(state_path())
-    return st if st.get("reason") else None
+    """Какой-нибудь блок как записан, просроченный тоже (sweep по нему возвращает сессии)."""
+    return next(iter(_records().values()), None)
 
 
 # --- слоты agy (flock на время жизни процесса) ---------------------------------------------------------------------

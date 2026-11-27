@@ -154,8 +154,9 @@ AUTH_WORDS = re.compile(
 # наш текст не должен их содержать, иначе ядро сочтёт отказ входом аккаунта Claude и переведёт аккаунт
 CORE_TEXT = re.compile(r"failed to authenticate|oauth token|token (has been )?revoked|invalid api key|authentication_error|"
                        r"api error: 401\b|please run /login|hit your .{0,40}limit|usage limit reached|limit reached", re.I)
-RESET_HEAD = re.compile(r"(?:reset|retry|try again|until)\w*[^0-9]{0,40}?((?:\d+\s*(?:days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b\s*)+)", re.I)
-RESET_PART = re.compile(r"(\d+)\s*(days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)\b", re.I)
+# срок бывает и слитным: живой 429 agy 1.5.18 — «Resets in 35m32s» (после единицы может идти следующее число)
+RESET_HEAD = re.compile(r"(?:reset|retry|try again|until)\w*[^0-9]{0,40}?((?:\d+\s*(?:days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)(?![a-z])\s*)+)", re.I)
+RESET_PART = re.compile(r"(\d+)\s*(days?|d|hours?|hrs?|h|minutes?|mins?|m|seconds?|secs?|s)(?![a-z])", re.I)
 
 
 def classify(text, code=None):

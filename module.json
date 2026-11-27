@@ -1,8 +1,8 @@
 {
  "name": "antigravity",
- "version": "0.3.12",
+ "version": "0.4.0",
  "api": "^2.6",
- "description": "Сессии хаба на Antigravity: модель claude-agy ведёт сессию через agy (оболочка bin/claude + мост stream-json), запреты ядра (--disallowedTools) держит PreToolUse-хук agy_guard.py (deny.py), ограничитель мест agy, счётчик, блок по квоте и входу, инструмент deepseek_ask (DeepSeek внутри хода Gemini, потолок 0,5 $ в день) и веб-виджет остатка квоты Antigravity в верхней полосе страницы хаба. Лестница daybudget и ворота пула эти сессии не трогают. Включение — слово владельца (HUB_CLAUDE в службе хаба)",
+ "description": "Сессии хаба на Antigravity: модель claude-agy ведёт сессию через agy (оболочка bin/claude + мост stream-json), запреты ядра (--disallowedTools) держит PreToolUse-хук agy_guard.py (deny.py), ограничитель мест agy, счётчик, блок по квоте и входу по группам моделей (Gemini и Claude/GPT — 3p) с выбором модели по живой квоте и запасной модели, инструмент deepseek_ask (DeepSeek внутри хода Gemini, потолок 0,5 $ в день) и веб-виджет остатка квоты Antigravity в верхней полосе страницы хаба. Лестница daybudget и ворота пула эти сессии не трогают. Включение — слово владельца (HUB_CLAUDE в службе хаба)",
  "run": [
   "python3",
   "main.py"

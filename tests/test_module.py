@@ -214,7 +214,8 @@ class Commands(Env):
         names = {c["name"]: c for c in agycli.doctor()}
         self.assertFalse(names["antigravity: agy"]["ok"])
         self.assertTrue(names["antigravity: модели"]["ok"])
-        self.assertTrue(names["antigravity: блок"]["ok"])
+        self.assertTrue(names["antigravity: блок Gemini"]["ok"])
+        self.assertTrue(names["antigravity: блок Claude/GPT"]["ok"])
         self.assertFalse(names["antigravity: ключ DeepSeek"]["ok"])      # engines.json нет
         for c in names.values():
             self.assertIsInstance(c["ok"], bool)
