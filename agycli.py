@@ -8,7 +8,6 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import setup as agy_setup  # noqa: E402
-import quota  # noqa: E402
 import store  # noqa: E402
 import sweep  # noqa: E402
 
@@ -122,6 +121,7 @@ def doctor(cfg=None, run=subprocess.run):
 
 def state_payload(now=None):
     """Состояние Antigravity для оркестратора: только собственные данные модуля."""
+    import quota
     now = time.time() if now is None else float(now)
     cfg = store.settings()
     cached = quota.load_cache(now=now)
