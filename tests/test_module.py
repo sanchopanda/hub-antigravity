@@ -95,6 +95,10 @@ class Launch(Env):
     def test_the_default_model_of_the_hub_counts_for_a_new_session(self):
         self.assertEqual(self.main.launch({"session": "s"}, default="claude-agy")["env"]["HUB_MOD_ANTIGRAVITY_ROUTE"], "1")
         self.assertEqual(self.main.launch({"session": "s", "model": "sonnet"}, default="claude-agy"), {})   # своя модель сильнее
+        self.hub({"codex": {"model": "claude-agy"},
+                  "antigravity": {"models": {"claude-agy": "gemini-carbon"}}})
+        got = self.main.launch_env({"session": "new", "kind": "work"})
+        self.assertEqual(got["env"]["HUB_MOD_ANTIGRAVITY_MODEL"], "gemini-carbon")
 
     def test_other_models_get_nothing_and_so_keep_the_one_check_path(self):
         for m in ("sonnet", "opus", "claude-deepseek", "claude-qwen", "", None):

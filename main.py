@@ -24,8 +24,10 @@ POLL = 15
 
 
 def default_model():
-    """Верхний ключ model из hub.json: ядро дописывает его в --model само, в launch.env он не приходит (как в engines)."""
-    return store.read_json(store.hub_json_path()).get("model")
+    """Модель по умолчанию хаба: верхний model или codex.model на хабе Codex."""
+    data = store.read_json(store.hub_json_path())
+    codex = data.get("codex") if isinstance(data.get("codex"), dict) else {}
+    return data.get("model") or codex.get("model")
 
 
 def launch(req, cfg=None, default=None):
