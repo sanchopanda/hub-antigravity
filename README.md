@@ -97,6 +97,8 @@ hub antigravity doctor
 `quota.py`, `web/main.js`, `web/quota.css`, `store.py`, `route.py`, `deny.py`, `translate.py`, `hooks.py`, `bridge.py`,
 `handoff.py`, `agy_guard.py`, `deepseek_mcp.py`, `sweep.py`, `setup.py`, `bin/claude`, `bin/deepseek-ask`, `tests/`.
 
+Мост отдаёт незавершённую промежуточную реплику перед вызовом инструмента и просит агента сообщать о существенных шагах. Если agy не передаёт событий не менее минуты, владелец видит сообщение об ожидании, без выдуманного статуса.
+
 ## Проверка
 - Состояние в живом хабе: `hub antigravity status` и `hub antigravity doctor`.
 - Машиночитаемое состояние для оркестратора провайдеров: `hub antigravity state --json` — квота Gemini,

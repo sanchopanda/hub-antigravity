@@ -31,6 +31,12 @@ import route  # noqa: E402
 import store  # noqa: E402
 import translate  # noqa: E402
 
+PROGRESS_RULE = ("Когда выполняешь работу с инструментами, сначала кратко сообщи владельцу, что проверяешь; "
+                 "по мере работы сообщай существенные результаты и следующий шаг. "
+                 "Если сведений ещё нет, не выдумывай их. Пиши на языке владельца.")
+VISIBLE_WAIT_S = 60
+VISIBLE_REPEAT_S = 120
+
 KEEPALIVE_S = 60     # пока agy молчит во время хода, раз в минуту строка `system/status`: ядро не считает сессию зависшей
 SLASH = ("/compact", "/recap", "/clear", "/model", "/effort")
 # /compact и /recap agy 1.5.18 сам раскрывает в print-режиме (живая проба 27.11): ход проходит, ответ — result
@@ -339,6 +345,7 @@ class Bridge:
         else:
             # у команды метка ядра стоит в конце строки (flow.py): agy получает чистую команду
             joined = re.sub(r"\s*\[hub:m\d+[^\]\n]*\]\s*$", "", joined).strip()
+        self.last_visible_wait = self.mono() - VISIBLE_REPEAT_S
         self.turn = translate.Turn(self.uuid, self.model_name, self.cum)
         self.turn.request, self.turn.began, self.turn.sent = joined, self.mono(), self.clock()
         self.turn.slash = slash           # /compact или /recap: ядро ждёт result с num_turns 0, а не ход
@@ -358,13 +365,14 @@ class Bridge:
     def agy_prompt(self, joined):
         """Что уходит в agy: сообщения владельца; в новой беседе — ещё инструкции хаба (§5.4) и выжимка чужих ходов (§6)."""
         rec = store.conv(self.uuid)
-        h = hashlib.sha256(self.instr.encode("utf-8")).hexdigest()[:16]
+        instr = self.instr + "\n\n" + PROGRESS_RULE if self.instr else ""
+        h = hashlib.sha256(instr.encode("utf-8")).hexdigest()[:16]
         parts = []
-        if self.instr:
+        if instr:
             if not rec.get("conv"):
-                parts.append(f"<hub-instructions>\n{self.instr}\n</hub-instructions>")
+                parts.append(f"<hub-instructions>\n{instr}\n</hub-instructions>")
             elif rec.get("instr") != h:
-                parts.append(f"<hub-instructions-updated>\nИнструкции хаба обновлены. Новый полный текст:\n{self.instr}\n"
+                parts.append(f"<hub-instructions-updated>\nИнструкции хаба обновлены. Новый полный текст:\n{instr}\n"
                              "</hub-instructions-updated>")
         self.turn.instr_hash = h
         items = handoff.since_agy_items(self.uuid, float(rec.get("last_agy_at") or 0))
@@ -546,6 +554,10 @@ class Bridge:
         if quiet > self.idle_limit:
             self.kill_child()
             return self.finish_error(f"Antigravity: agy молчит {int(quiet // 60) or 1} мин, процесс снят", kind="hung")
+        if (quiet >= VISIBLE_WAIT_S and self.mono() - self.last_visible_wait >= VISIBLE_REPEAT_S
+                and not getattr(self.turn, "slash", None)):
+            self.last_visible_wait = self.mono()
+            self.emit(self._error_text_msg(self.turn, "Antigravity пока не передал новых данных; ожидаю ответ."))
         if self.mono() - self.last_keepalive >= self.keepalive:
             self.last_keepalive = self.mono()
             self.emit({"type": "system", "subtype": "status", "status": "working", "session_id": self.uuid})

@@ -157,6 +157,15 @@ class Turn:
             else:
                 out += self._drain_text(idx)
         elif stype == "tool":
+            # agy может начать инструмент прежде, чем закрыть текстовый шаг: реплика уже готова для владельца.
+            for prior in sorted(self.texts):
+                if prior == idx or prior in self.flushed:
+                    continue
+                text = "".join(self.texts.get(prior) or []).strip()
+                if text:
+                    self.texts[prior] = []
+                    self.said = True
+                    out.append(self._assistant({"type": "text", "text": text}))
             info = ev.get("tool_info") if isinstance(ev.get("tool_info"), dict) else {}
             if idx not in self.tools:
                 out += self._tool_use(idx, ev, info)

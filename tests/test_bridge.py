@@ -142,6 +142,31 @@ class Translation(Base):
                          "response": "Первый абзац.\n\n```py\nprint(1)\n\nx = 2\n```\n\nХвост"})
         self.assertEqual(res, [])
 
+    def test_commentary_before_tool_is_emitted_before_the_tool(self):
+        import translate
+        turn = translate.Turn("u1", "claude-agy")
+        self.assertEqual(turn.feed({"event":"step_update", "step_index":1, "state":"ACTIVE",
+                                    "step_type":"agent_response", "text_delta":"Проверяю настройки."}), [])
+        events = turn.feed({"event":"step_update", "step_index":2, "state":"ACTIVE", "step_type":"tool",
+                            "tool_info":{"name":"run_command", "parameters":{"command":"pwd"}}})
+        blocks = [e["message"]["content"][0] for e in events]
+        self.assertEqual([(b["type"], b.get("text")) for b in blocks],
+                         [("text", "Проверяю настройки."), ("tool_use", None)])
+        self.assertEqual(turn.feed({"event":"step_update", "step_index":1, "state":"DONE",
+                                    "step_type":"agent_response"}), [])
+
+    def test_nested_commentary_precedes_tool_and_late_text_is_kept(self):
+        import translate
+        turn = translate.Turn("u1", "claude-agy")
+        turn.feed({"event":"step_update", "step_update":{"step_index":1, "state":"ACTIVE",
+                   "step_type":"agent_response", "text_delta":"Проверяю."}})
+        got = turn.feed({"event":"step_update", "step_update":{"step_index":2, "state":"ACTIVE",
+                         "step_type":"tool", "tool_info":{"name":"run_command"}}})
+        self.assertEqual([x["message"]["content"][0]["type"] for x in got], ["text", "tool_use"])
+        tail = turn.feed({"event":"step_update", "step_update":{"step_index":1, "state":"DONE",
+                          "step_type":"agent_response", "text_delta":" Готово."}})
+        self.assertEqual(tail[0]["message"]["content"][0]["text"], "Готово.")
+
     def test_messages_that_come_during_a_turn_go_as_one_turn_after_it(self):
         p = self.session("slow_echo")
         p.user("[hub:m1] первое")
@@ -343,6 +368,28 @@ class Process(Base):
         self.assertTrue(wait_until(lambda: len(self.sb.agy_runs()) == 2))
         argv = self.sb.agy_runs()[1]["argv"]
         self.assertEqual(argv[argv.index("--conversation") + 1], "conv-1")
+
+    def test_silence_notice_reports_only_actual_wait_and_is_rate_limited(self):
+        import bridge
+        from types import SimpleNamespace
+        b = bridge.Bridge.__new__(bridge.Bridge)
+        now = [1000.0]
+        b.mono = lambda: now[0]
+        b.heard, b.last_visible_wait, b.last_keepalive = 940.0, 0.0, 1000.0
+        b.keepalive, b.idle_limit = 60, 1000
+        b.waiting_turn, b.turn = None, SimpleNamespace(slash=None)
+        b.session, b.uuid, b.model_name = 's', 'u', 'm'
+        b.child_alive = lambda: True
+        emitted = []
+        b.emit = emitted.append
+        b.on_tick()
+        b.on_tick()
+        self.assertEqual(len(emitted), 1)
+        self.assertIn('не передал новых данных', emitted[0]['message']['content'][0]['text'])
+        now[0] += 121
+        b.on_tick()
+        texts = [e for e in emitted if e.get('type') == 'assistant']
+        self.assertEqual(len(texts), 2)
 
     def test_a_silent_agy_is_removed_after_the_idle_limit(self):
         p = self.session("hang", env={"HUB_MOD_ANTIGRAVITY_IDLE": "1.5"})
