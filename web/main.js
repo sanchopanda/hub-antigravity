@@ -1,6 +1,5 @@
-// Antigravity quota widget in the hub topbar: Gemini 5h & weekly remaining %, Moscow reset times,
-// plus Claude/GPT windows next to it when space allows. Falls back to "—" when agy did not respond
-// or cached data is older than 5 minutes.
+// Antigravity quota widget in the hub topbar: Gemini 5h & weekly remaining %, Moscow reset times.
+// Falls back to "—" when agy did not respond or cached data is older than 5 minutes.
 const MOSCOW_TZ = "Europe/Moscow";
 const MAX_CACHE_S = 300;
 const AGY_MODEL = /(^|[-_/])agy($|[-_])/i;
@@ -9,8 +8,6 @@ const STR = {
   ru: {
     gemini5h: "Gemini 5ч",
     geminiWeek: "Gemini неделя",
-    cg5h: "Claude/GPT 5ч",
-    cgWeek: "Claude/GPT неделя",
     msk: "МСК",
     noData: "Antigravity: нет свежих данных квоты",
     updated: "обновлено",
@@ -19,8 +16,6 @@ const STR = {
   en: {
     gemini5h: "Gemini 5h",
     geminiWeek: "Gemini week",
-    cg5h: "Claude/GPT 5h",
-    cgWeek: "Claude/GPT week",
     msk: "MSK",
     noData: "Antigravity: no fresh quota data",
     updated: "updated",
@@ -111,20 +106,13 @@ export function quotaView(seg, nowSec, lang = "ru") {
       ok: false,
       fetchedAt: null,
       gemini: { h5: dash, weekly: dash, level: "muted" },
-      claudeGpt: null,
     };
   }
   const g5 = bucketView(seg.gemini?.h5, nowSec, lang);
   const gw = bucketView(seg.gemini?.weekly, nowSec, lang);
   const gemini = { h5: g5, weekly: gw, level: worstLevel([g5.level, gw.level]) };
 
-  let claudeGpt = null;
-  if (seg.claude_gpt && typeof seg.claude_gpt === "object" && (seg.claude_gpt.h5 || seg.claude_gpt.weekly)) {
-    const c5 = bucketView(seg.claude_gpt.h5, nowSec, lang);
-    const cw = bucketView(seg.claude_gpt.weekly, nowSec, lang);
-    claudeGpt = { h5: c5, weekly: cw, level: worstLevel([c5.level, cw.level]) };
-  }
-  return { ok: true, fetchedAt, gemini, claudeGpt };
+  return { ok: true, fetchedAt, gemini };
 }
 
 function makeRow(hub, label, item) {
@@ -171,33 +159,12 @@ export default function register(hub) {
           titleLine(s.gemini5h, v.gemini.h5, s),
           titleLine(s.geminiWeek, v.gemini.weekly, s),
         ];
-        if (v.claudeGpt) {
-          lines.push(titleLine(s.cg5h, v.claudeGpt.h5, s), titleLine(s.cgWeek, v.claudeGpt.weekly, s));
-        }
         if (v.fetchedAt) lines.push(`${s.updated}: ${formatMoscowClock(v.fetchedAt, hub.lang)}`);
         gPill.title = lines.join("\n");
       } else {
         gPill.title = s.noData;
       }
       wrap.append(gPill);
-
-      if (v.ok && v.claudeGpt) {
-        const cPill = hub.el("span", "agy-quota agy-quota-secondary");
-        cPill.dataset.group = "claude-gpt";
-        cPill.dataset.level = v.claudeGpt.level;
-        if (active) cPill.dataset.active = "true";
-        cPill.append(
-          makeRow(hub, s.cg5h, v.claudeGpt.h5),
-          makeRow(hub, s.cgWeek, v.claudeGpt.weekly),
-        );
-        const cLines = [
-          titleLine(s.cg5h, v.claudeGpt.h5, s),
-          titleLine(s.cgWeek, v.claudeGpt.weekly, s),
-        ];
-        if (v.fetchedAt) cLines.push(`${s.updated}: ${formatMoscowClock(v.fetchedAt, hub.lang)}`);
-        cPill.title = cLines.join("\n");
-        wrap.append(cPill);
-      }
 
       root.replaceChildren(wrap);
     },
