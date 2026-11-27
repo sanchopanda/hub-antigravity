@@ -6,6 +6,7 @@
 """
 import os
 import sys
+import threading
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -15,6 +16,7 @@ from core import hubmod  # noqa: E402
 
 import agycli as agy_cmd  # noqa: E402
 import handoff  # noqa: E402
+import quota  # noqa: E402
 import setup as agy_setup  # noqa: E402
 import store  # noqa: E402
 
@@ -88,8 +90,26 @@ def watch_once(now=None):
     return key
 
 
+def quota_loop():
+    """Отдельный поток опроса `agy /usage` (кэш <= 5 мин), чтобы не тормозить watch_once и хуки модуля."""
+    poller = quota.Poller(hubmod.state.set)
+    try:
+        poller.prime()
+    except Exception as e:  # noqa: BLE001 — сбой квоты не должен ронять модуль
+        print(f"antigravity quota prime: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+    while True:
+        try:
+            poller.step()
+        except Exception as e:  # noqa: BLE001 — один плохой проход не останавливает опрос
+            print(f"antigravity quota: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+            time.sleep(quota.REFRESH_FAIL)
+            continue
+        time.sleep(poller.wait_seconds())
+
+
 @hubmod.on_ready
 def loop():
+    threading.Thread(target=quota_loop, name="antigravity-quota", daemon=True).start()
     while True:
         try:
             watch_once()

@@ -1,0 +1,30 @@
+/* antigravity quota widget: two compact lines per group next to DeepSeek pills in the topbar */
+.agy-quota-slot { min-width: 0; }
+.agy-quota-wrap { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); max-width: 100%; }
+.agy-quota {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.25;
+  white-space: nowrap;
+}
+.agy-quota-row { display: inline-flex; align-items: baseline; gap: 4px; }
+.agy-quota-label { color: var(--muted-foreground); }
+.agy-quota-pct { color: var(--foreground); font-weight: 600; font-variant-numeric: tabular-nums; }
+.agy-quota-pct[data-level="warn"] { color: var(--warning, #b7791f); }
+.agy-quota-pct[data-level="high"] { color: var(--destructive, #c53030); }
+.agy-quota-pct[data-level="muted"] { color: var(--muted-foreground); font-weight: 400; }
+.agy-quota-reset { color: var(--muted-foreground); font-variant-numeric: tabular-nums; }
+.agy-quota[data-level="high"] { border-color: var(--destructive, #c53030); }
+.agy-quota[data-active="true"]:not([data-level="high"]) {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+@media (max-width: 520px) {
+  .agy-quota-secondary { display: none; }
+}

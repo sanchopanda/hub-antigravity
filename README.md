@@ -11,9 +11,9 @@ hub antigravity setup
 hub antigravity doctor
 ```
 
-Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.2.0 — модуль включён в хабе (`HUB_CLAUDE` в службе,
+Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.3.0 — модуль включён в хабе (`HUB_CLAUDE` в службе,
 `agy 1.5.18`, `setup` выполнен). Скиллы agy настроены глобально (`~/.gemini/config/skills.json`), исполнители и
-мини-хабы идут через мост, их запреты держит хук agy.
+мини-хабы идут через мост, их запреты держит хук agy; в верхней полосе страницы хаба работает веб-виджет остатка квоты.
 
 ## Как это устроено
 - Модель сессии `claude-agy` (id модели agy — `hub.json` → `antigravity.models`, «default» — agy по умолчанию).
@@ -43,16 +43,22 @@ hub antigravity doctor
   `engines.json` (`0600`), деньги — `hub budget --json`, потолок инструмента `antigravity.deepseek.day_usd` (0,5 $).
 - `sweep.py` — задание расписания: на время блока уводит сессии agy туда, куда ведёт лестница, потом возвращает.
 - `handoff.py` — выжимка ходов при смене движка (`agy` → Claude/DeepSeek: оболочка; обратно: мост).
+- `quota.py` + `web/main.js` + `web/quota.css` — веб-виджет квоты Antigravity в верхней полосе страницы хаба рядом с
+  балансом DeepSeek (ключ снимка `antigravity_quota`, слот `topbar`). Фоновый поток опрашивает `agy -p "/usage" --output-format json`
+  с кэшем не дольше 5 минут (`moddata/antigravity/quota.json`), показывает две строки — `Gemini 5ч` и `Gemini неделя`
+  (процент остатка и время сброса по Москве; при 100% и `reset_time = 1970-01-01T00:00:00Z` время не выводится) — и
+  отдельный блок для окон `Claude/GPT`, если помещается. Если `agy` не ответил или кэш устарел — показывает прочерк `—`,
+  не ошибку.
 
 ## Файлы
-`module.json`, `main.py` (`launch.env`, `cli`, `doctor`, `owner.notify` о блоке), `agycli.py` (`hub antigravity`),
-`store.py`, `route.py`, `deny.py`, `translate.py`, `hooks.py`, `bridge.py`, `handoff.py`, `agy_guard.py`,
-`deepseek_mcp.py`, `sweep.py`, `setup.py`, `bin/claude`, `bin/deepseek-ask`, `tests/`.
+`module.json`, `main.py` (`launch.env`, `cli`, `doctor`, `owner.notify` о блоке, опрос квоты), `agycli.py` (`hub antigravity`),
+`quota.py`, `web/main.js`, `web/quota.css`, `store.py`, `route.py`, `deny.py`, `translate.py`, `hooks.py`, `bridge.py`,
+`handoff.py`, `agy_guard.py`, `deepseek_mcp.py`, `sweep.py`, `setup.py`, `bin/claude`, `bin/deepseek-ask`, `tests/`.
 
 ## Проверка
 - Состояние в живом хабе: `hub antigravity status` и `hub antigravity doctor`.
-- Тесты модуля (142, гонять здесь со снятыми `ANTHROPIC_*` и `CLAUDE_CODE_OAUTH_TOKEN`):
-  `cd ~/.hub-personal/ext/antigravity/tests && env -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_API_KEY -u ANTHROPIC_BASE_URL -u CLAUDE_CODE_OAUTH_TOKEN python3 -W ignore -m unittest test_module test_bridge test_shim test_deepseek test_stand`
+- Тесты модуля (гонять здесь со снятыми `ANTHROPIC_*` и `CLAUDE_CODE_OAUTH_TOKEN`):
+  `cd ~/.hub-personal/ext/antigravity/tests && env -u ANTHROPIC_AUTH_TOKEN -u ANTHROPIC_API_KEY -u ANTHROPIC_BASE_URL -u CLAUDE_CODE_OAUTH_TOKEN python3 -W ignore -m unittest test_module test_bridge test_shim test_deepseek test_stand test_quota`
 - Процесс модуля с ядром: `~/.hub-personal/bin/python3 -W ignore ~/.hub-personal/scratch/modules-back/check_antigravity.py`
 - Стенды соседей: `check_daybudget.py`, `check_switch.py`, `check_poolpass.py` там же.
 

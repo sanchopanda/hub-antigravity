@@ -1,8 +1,8 @@
 {
  "name": "antigravity",
- "version": "0.2.0",
+ "version": "0.3.0",
  "api": "^2.6",
- "description": "Сессии хаба на Antigravity: модель claude-agy ведёт сессию через agy (оболочка bin/claude + мост stream-json), запреты ядра (--disallowedTools) держит PreToolUse-хук agy_guard.py (deny.py), ограничитель мест agy, счётчик, блок по квоте и входу, инструмент deepseek_ask (DeepSeek внутри хода Gemini, потолок 0,5 $ в день). Лестница daybudget и ворота пула эти сессии не трогают. Включение — слово владельца (HUB_CLAUDE в службе хаба)",
+ "description": "Сессии хаба на Antigravity: модель claude-agy ведёт сессию через agy (оболочка bin/claude + мост stream-json), запреты ядра (--disallowedTools) держит PreToolUse-хук agy_guard.py (deny.py), ограничитель мест agy, счётчик, блок по квоте и входу, инструмент deepseek_ask (DeepSeek внутри хода Gemini, потолок 0,5 $ в день) и веб-виджет остатка квоты Antigravity в верхней полосе страницы хаба. Лестница daybudget и ворота пула эти сессии не трогают. Включение — слово владельца (HUB_CLAUDE в службе хаба)",
  "run": [
   "python3",
   "main.py"
@@ -17,5 +17,11 @@
  },
  "budget": {
   "launch.env": 2
- }
+ },
+ "snapshot": {
+  "keys": [
+   "antigravity_quota"
+  ]
+ },
+ "web": "web/main.js"
 }
