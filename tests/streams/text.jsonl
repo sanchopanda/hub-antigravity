@@ -1,0 +1,7 @@
+{"event":"init","conversation_id":"conv-1","init":{"cwd":"/tmp","tools":["run_command","view_file"],"permission_mode":"always-proceed","model":"fake"}}
+{"_turn":1}
+{"event":"step_update","conversation_id":"conv-1","step_index":0,"state":"DONE","step_type":"user_input"}
+{"event":"step_update","conversation_id":"conv-1","step_index":1,"state":"ACTIVE","step_type":"agent_response","text_delta":"Привет, "}
+{"event":"step_update","conversation_id":"conv-1","step_index":1,"state":"ACTIVE","step_type":"agent_response","text_delta":"мир."}
+{"event":"step_update","conversation_id":"conv-1","step_index":1,"state":"DONE","step_type":"agent_response","usage":{"input_tokens":120,"output_tokens":8,"cache_read_tokens":100}}
+{"event":"result","conversation_id":"conv-1","status":"SUCCESS","response":"Привет, мир.","duration_seconds":1.5,"num_turns":1,"usage":{"input_tokens":120,"output_tokens":8,"thinking_tokens":3,"cache_read_tokens":100,"total_tokens":231}}

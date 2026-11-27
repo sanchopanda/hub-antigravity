@@ -1,0 +1,8 @@
+#!/bin/sh
+# Запасной путь к deepseek_ask без MCP (если agy не вызывает инструменты MCP в -p): те же проверки денег и ключа.
+# Пример: bin/deepseek-ask --model pro "вопрос"   или   echo вопрос | bin/deepseek-ask -
+# Python — из файла bin/python (его пишет `hub antigravity setup`), иначе python3: переменных модуля у agy нет.
+here=${0%/*}
+py=python3
+[ -r "$here/python" ] && read -r py < "$here/python"
+exec "$py" -I "${here%/*}/deepseek_mcp.py" --ask "$@"

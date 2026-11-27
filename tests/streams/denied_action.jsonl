@@ -1,0 +1,5 @@
+{"event":"init","conversation_id":"conv-ae-1","init":{"cwd":"/tmp","tools":["run_command","write_file"]}}
+{"_turn":1}
+{"event":"step_update","conversation_id":"conv-ae-1","step_update":{"step_index":1,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo hi"}}}}
+{"event":"step_update","conversation_id":"conv-ae-1","step_update":{"step_index":1,"state":"ERROR","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"echo hi"},"error":{"type":"TOOL_ERROR","message":"permission check failed for unsandboxed \"echo hi\": user denied permission"}}}}
+{"event":"result","conversation_id":"conv-ae-1","result":{"conversation_id":"conv-ae-1","status":"SUCCESS","response":"","duration_seconds":2.0,"num_turns":1,"usage":{"input_tokens":100,"output_tokens":12},"denied_actions":[{"action":"command","display_name":"Bash"}]}}

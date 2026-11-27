@@ -1,0 +1,20 @@
+#!/bin/sh
+# Оболочка claude для хаба: стоит на пути ВСЕХ сессий (HUB_CLAUDE). Путь «не agy» — одна проверка и exec настоящего
+# claude; тест на каждую ветку — tests/test_shim.py. Откат: убрать HUB_CLAUDE из службы хаба.
+here=${0%/*}   # папка bin; код моста — папкой выше
+mod=${here%/*}
+real=
+[ -r "$here/real-claude" ] && read -r real < "$here/real-claude"
+[ -x "$real" ] || real=$HOME/.local/bin/claude
+py=${HUB_MOD_ANTIGRAVITY_PYTHON:-python3}
+case ${HUB_MOD_ANTIGRAVITY_ROUTE:-} in
+  1)  # сессия на claude-agy: мост, но только для запуска сессии (-p и --input-format), не для `claude auth status`
+    p= i=
+    for a; do
+      case $a in -p) p=1 ;; --input-format|--input-format=*) i=1 ;; esac
+    done
+    [ -n "$p" ] && [ -n "$i" ] && command -v "$py" > /dev/null 2>&1 && exec "$py" -I "$mod/bridge.py" "$@" ;;
+  handoff)  # сессия ушла с agy на другой движок: передать итог ходов и тот же claude
+    command -v "$py" > /dev/null 2>&1 && exec "$py" -I "$mod/handoff.py" "$@" ;;
+esac
+exec "$real" "$@"

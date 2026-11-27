@@ -1,0 +1,21 @@
+{
+ "name": "antigravity",
+ "version": "0.1.1",
+ "api": "^2.6",
+ "description": "Сессии хаба на Antigravity: модель claude-agy ведёт сессию через agy (оболочка bin/claude + мост stream-json), запреты ядра (--disallowedTools) держит PreToolUse-хук agy_guard.py (deny.py), ограничитель мест agy, счётчик, блок по квоте и входу, инструмент deepseek_ask (DeepSeek внутри хода Gemini, потолок 0,5 $ в день). Лестница daybudget и ворота пула эти сессии не трогают. Включение — слово владельца (HUB_CLAUDE в службе хаба)",
+ "run": [
+  "python3",
+  "main.py"
+ ],
+ "capabilities": [
+  "launch.env",
+  "cli",
+  "doctor"
+ ],
+ "commands": {
+  "antigravity": "Antigravity: status | unblock | sweep [--all-back] | setup [--dry|--undo] | doctor"
+ },
+ "budget": {
+  "launch.env": 2
+ }
+}

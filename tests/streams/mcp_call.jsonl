@@ -1,0 +1,6 @@
+{"event":"init","conversation_id":"conv-1","init":{"cwd":"/tmp","tools":["run_command","mcp_hub-deepseek_deepseek_ask"]}}
+{"_turn":1}
+{"event":"step_update","conversation_id":"conv-1","step_index":1,"state":"ACTIVE","step_type":"tool","tool_name":"mcp_hub-deepseek_deepseek_ask","tool_info":{"name":"mcp_hub-deepseek_deepseek_ask","parameters":{"prompt":"2+2?"}}}
+{"event":"step_update","conversation_id":"conv-1","step_index":1,"state":"DONE","step_type":"tool","tool_name":"mcp_hub-deepseek_deepseek_ask","tool_info":{"name":"mcp_hub-deepseek_deepseek_ask","parameters":{"prompt":"2+2?"},"output":{"text":"4"}}}
+{"event":"step_update","conversation_id":"conv-1","step_index":2,"state":"DONE","step_type":"agent_response","text_delta":"DeepSeek: 4"}
+{"event":"result","conversation_id":"conv-1","status":"SUCCESS","response":"DeepSeek: 4","duration_seconds":3.0,"num_turns":1,"usage":{"input_tokens":80,"output_tokens":9}}

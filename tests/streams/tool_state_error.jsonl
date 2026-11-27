@@ -1,0 +1,6 @@
+{"event":"init","conversation_id":"conv-err-1","init":{"cwd":"/tmp","tools":["run_command","write_file"]}}
+{"_turn":1}
+{"event":"step_update","conversation_id":"conv-err-1","step_update":{"step_index":1,"state":"ACTIVE","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"git commit -m test"}}}}
+{"event":"step_update","conversation_id":"conv-err-1","step_update":{"step_index":1,"state":"ERROR","step_type":"tool","tool_name":"run_command","tool_info":{"name":"run_command","parameters":{"CommandLine":"git commit -m test"},"error":{"type":"TOOL_ERROR","message":"tool call denied by pre-tool hook: Antigravity: git commit этой сессии запрещён"}}}}
+{"event":"step_update","conversation_id":"conv-err-1","step_update":{"step_index":2,"state":"DONE","step_type":"agent_response","text_delta":"Запрещено хуком."}}
+{"event":"result","conversation_id":"conv-err-1","result":{"conversation_id":"conv-err-1","status":"SUCCESS","response":"Запрещено хуком.","duration_seconds":1.0,"num_turns":1,"usage":{"input_tokens":80,"output_tokens":10}}}

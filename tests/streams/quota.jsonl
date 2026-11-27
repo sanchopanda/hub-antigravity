@@ -1,0 +1,3 @@
+{"event":"init","conversation_id":"conv-1","init":{"cwd":"/tmp","tools":[]}}
+{"_turn":1}
+{"event":"result","conversation_id":"conv-1","status":"ERROR","error":"RESOURCE_EXHAUSTED: quota exceeded, retry after 90 minutes","duration_seconds":0.3,"num_turns":1,"usage":{"input_tokens":0,"output_tokens":0}}
