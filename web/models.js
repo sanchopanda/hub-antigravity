@@ -76,7 +76,18 @@ export default function register(hub) {
     effortSelect.setAttribute("aria-label", "Уровень рассуждений Antigravity для этой сессии");
     picker.append(modelSelect, effortSelect);
     root.append(picker);
-    return {picker, modelSelect, effortSelect, sessionName: null, entries: new Map(), busy: false};
+    return {
+      picker,
+      modelSelect,
+      effortSelect,
+      sessionName: null,
+      entries: new Map(),
+      busy: false,
+      modelSig: null,
+      effortSig: null,
+      lastRequested: null,
+      activeEffort: "",
+    };
   }
 
   async function applyModel(controls, sessionName, chosenId) {
@@ -117,18 +128,34 @@ export default function register(hub) {
       const byCategory = modelGroups(models);
 
       const entries = new Map();
-      modelSelect.replaceChildren(...[...byCategory].map(([category, items]) => {
-        const group = hub.el("optgroup");
-        group.label = category;
-        for (const item of items) {
-          entries.set(item.key, item);
-          const option = hub.el("option", null, item.base);
-          option.value = item.key;
-          group.append(option);
-        }
-        return group;
-      }));
+      const modelSig = models.length
+        ? models.map((item) => `${item?.id || ""}\0${item?.title || item?.displayName || ""}\0${item?.category || ""}`).join("\n")
+        : "__empty__";
+      for (const items of byCategory.values()) {
+        for (const item of items) entries.set(item.key, item);
+      }
       controls.entries = entries;
+
+      const modelListChanged = controls.modelSig !== modelSig;
+      if (modelListChanged) {
+        controls.modelSig = modelSig;
+        if (models.length) {
+          modelSelect.replaceChildren(...[...byCategory].map(([category, items]) => {
+            const group = hub.el("optgroup");
+            group.label = category;
+            for (const item of items) {
+              const option = hub.el("option", null, item.base);
+              option.value = item.key;
+              group.append(option);
+            }
+            return group;
+          }));
+        } else {
+          const option = hub.el("option", null, "Каталог моделей ещё загружается");
+          option.value = "";
+          modelSelect.replaceChildren(option);
+        }
+      }
 
       const selectedItem = models.find((item) => item.agy_id === actual || item.id === requested);
       let activeEntry = null;
@@ -143,36 +170,43 @@ export default function register(hub) {
         activeEffort = effort;
       }
 
+      const modelChanged = controls.lastRequested !== requested || controls.sessionName !== session.name;
+      controls.lastRequested = requested;
+
       if (activeEntry) {
-        modelSelect.value = activeEntry.key;
+        if (modelListChanged || modelChanged) modelSelect.value = activeEntry.key;
         const variants = activeEntry.variants;
         const showEffort = variants.some((v) => v.effort);
         effortSelect.hidden = !showEffort;
         if (showEffort) {
-          effortSelect.replaceChildren(...variants.map((v) => {
-            const option = hub.el("option", null, v.effort || "Стандарт");
-            option.value = v.id;
-            option.title = v.agy_id || v.id;
-            return option;
-          }));
+          const effortSig = variants.map((v) => `${v.id}\0${v.effort || ""}`).join("\n");
+          const effortListChanged = controls.effortSig !== effortSig;
+          if (effortListChanged) {
+            controls.effortSig = effortSig;
+            effortSelect.replaceChildren(...variants.map((v) => {
+              const option = hub.el("option", null, v.effort || "Стандарт");
+              option.value = v.id;
+              option.title = v.agy_id || v.id;
+              return option;
+            }));
+          }
           const chosenVariant = variants.find((v) => v.id === selectedItem.id) || variants[0];
-          if (chosenVariant) effortSelect.value = chosenVariant.id;
+          if (chosenVariant && (effortListChanged || modelChanged)) {
+            effortSelect.value = chosenVariant.id;
+          }
+        } else {
+          controls.effortSig = "";
         }
-      } else if (!models.length) {
-        const option = hub.el("option", null, "Каталог моделей ещё загружается");
-        option.value = "";
-        modelSelect.replaceChildren(option);
-        effortSelect.hidden = true;
       } else {
+        controls.effortSig = "";
         effortSelect.hidden = true;
       }
 
       const busyTurn = session.state === "busy";
       const onlyOneEffort = !activeEntry || activeEntry.variants.length <= 1;
       controls.activeEffort = activeEffort;
-      controls.busyTurn = busyTurn;
-      modelSelect.disabled = controls.busy || busyTurn || !models.length;
-      effortSelect.disabled = controls.busy || busyTurn || onlyOneEffort;
+      modelSelect.disabled = controls.busy || !models.length;
+      effortSelect.disabled = controls.busy || onlyOneEffort;
       modelSelect.title = busyTurn ? "Сменится после текущего хода" : "Выбрать модель Antigravity";
       effortSelect.title = busyTurn
         ? "Сменится после текущего хода"
@@ -184,14 +218,15 @@ export default function register(hub) {
           const entry = controls.entries.get(modelSelect.value);
           const target = pickVariant(entry, controls.activeEffort);
           if (!target) return;
+          controls.activeEffort = target.effort || controls.activeEffort;
           await applyModel(controls, session.name, target.id);
-          modelSelect.disabled = controls.busyTurn;
-          effortSelect.disabled = controls.busyTurn || !entry || entry.variants.length <= 1;
+          modelSelect.disabled = !controls.entries.size;
+          effortSelect.disabled = !entry || entry.variants.length <= 1;
         };
         effortSelect.onchange = async () => {
           await applyModel(controls, session.name, effortSelect.value);
-          modelSelect.disabled = controls.busyTurn;
-          effortSelect.disabled = controls.busyTurn;
+          modelSelect.disabled = !controls.entries.size;
+          effortSelect.disabled = false;
         };
       }
     },

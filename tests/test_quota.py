@@ -212,7 +212,7 @@ class ManifestAndWeb(unittest.TestCase):
         with open(os.path.join(MODULE, "module.json"), encoding="utf-8") as f:
             man = json.load(f)
         self.assertEqual(modules.validate(man, "module.json"), [])
-        self.assertEqual(man["version"], "0.4.0")
+        self.assertEqual(man["version"], "0.4.1")
         self.assertEqual(man["web"], "web/main.js")
         self.assertIn("antigravity_quota", man["snapshot"]["keys"])
         self.assertIn("antigravity_models", man["snapshot"]["keys"])
@@ -339,6 +339,87 @@ console.log("MODELS_JS_OK");
         cp = subprocess.run([node, "--input-type=module", "-e", script], capture_output=True, text=True, timeout=15)
         self.assertEqual(cp.returncode, 0, cp.stderr or cp.stdout)
         self.assertIn("MODELS_JS_OK", cp.stdout)
+
+    def test_web_models_js_keeps_select_clickable_while_busy_and_stable_on_rerender(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node не установлен")
+        models_js = os.path.join(MODULE, "web", "models.js")
+        script = f"""
+import assert from "node:assert/strict";
+import register from {json.dumps("file://" + models_js)};
+
+function makeNode(tag, cls, text) {{
+  const el = {{
+    tagName: tag.toUpperCase(),
+    className: cls || "",
+    textContent: text || "",
+    children: [],
+    hidden: false,
+    disabled: false,
+    value: "",
+    title: "",
+    dataset: {{}},
+    attrs: {{}},
+    classList: {{ toggle() {{}} }},
+    setAttribute(k, v) {{ this.attrs[k] = v; }},
+    append(...nodes) {{ this.children.push(...nodes); }},
+    replaceChildren(...nodes) {{
+      this._replaceCount = (this._replaceCount || 0) + 1;
+      this.children = [...nodes];
+    }},
+    querySelector(sel) {{
+      if (sel === ":scope > .agy-model-picker") return this.children.find((c) => c.className === "agy-model-picker") || null;
+      return null;
+    }},
+  }};
+  return el;
+}}
+
+globalThis.document = {{ documentElement: {{ classList: {{ toggle() {{}} }} }} }};
+const slots = {{}};
+const hub = {{
+  el: makeNode,
+  addStyle() {{}},
+  addSlot(name, def) {{ slots[name] = def; }},
+  post: async () => ({{ data: {{ queued: true, text: "queued" }} }}),
+  banner() {{}},
+}};
+register(hub);
+
+const root = makeNode("div");
+const snap = {{
+  mods: {{
+    antigravity: {{
+      antigravity_models: {{
+        value: {{
+          aliases: {{}},
+          models: [
+            {{ id: "claude-agy-gemini-4-hydrogen-high", agy_id: "gemini-4-hydrogen-high", title: "Gemini 4 Hydrogen (High)", category: "Gemini" }},
+            {{ id: "claude-agy-gemini-4-hydrogen-low", agy_id: "gemini-4-hydrogen-low", title: "Gemini 4 Hydrogen (Low)", category: "Gemini" }},
+          ],
+        }},
+      }},
+    }},
+  }},
+}};
+const ctx = {{ session: {{ name: "s1", state: "busy", model: "codex/claude-agy-gemini-4-hydrogen-high" }} }};
+slots["session.header"].render(root, snap, ctx);
+const picker = root.children[0];
+const [ms, es] = picker.children;
+assert.equal(ms.disabled, false);
+assert.equal(es.disabled, false);
+assert.equal(ms._replaceCount, 1);
+assert.equal(es._replaceCount, 1);
+
+slots["session.header"].render(root, snap, ctx);
+assert.equal(ms._replaceCount, 1);
+assert.equal(es._replaceCount, 1);
+console.log("RENDER_STABLE_OK");
+"""
+        cp = subprocess.run([node, "--input-type=module", "-e", script], capture_output=True, text=True, timeout=15)
+        self.assertEqual(cp.returncode, 0, cp.stderr or cp.stdout)
+        self.assertIn("RENDER_STABLE_OK", cp.stdout)
 
 
 if __name__ == "__main__":
