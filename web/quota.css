@@ -1,19 +1,25 @@
-/* antigravity quota widget: two compact lines per group next to DeepSeek pills in the topbar */
+/* antigravity quota widget: compact single-line pills in the topbar */
 .agy-quota-slot { min-width: 0; }
 .agy-quota-wrap { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--space-1); max-width: 100%; }
 .agy-quota {
   display: inline-flex;
-  flex-direction: column;
-  gap: 1px;
-  padding: 2px var(--space-2);
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+  padding: 1px 7px;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 6px;
   color: var(--muted-foreground);
   font-size: 11px;
-  line-height: 1.25;
+  line-height: 1.2;
   white-space: nowrap;
 }
-.agy-quota-row { display: inline-flex; align-items: baseline; gap: 4px; }
+.agy-quota-row { display: inline-flex; align-items: baseline; gap: 4px; white-space: nowrap; }
+.agy-quota-row + .agy-quota-row {
+  padding-left: 8px;
+  border-left: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+}
 .agy-quota-label { color: var(--muted-foreground); }
 .agy-quota-pct { color: var(--foreground); font-weight: 600; font-variant-numeric: tabular-nums; }
 .agy-quota-pct[data-level="warn"] { color: var(--warning, #b7791f); }

@@ -212,7 +212,7 @@ class ManifestAndWeb(unittest.TestCase):
         with open(os.path.join(MODULE, "module.json"), encoding="utf-8") as f:
             man = json.load(f)
         self.assertEqual(modules.validate(man, "module.json"), [])
-        self.assertEqual(man["version"], "0.3.9")
+        self.assertEqual(man["version"], "0.3.10")
         self.assertEqual(man["web"], "web/main.js")
         self.assertIn("antigravity_quota", man["snapshot"]["keys"])
         self.assertIn("antigravity_models", man["snapshot"]["keys"])
@@ -228,7 +228,7 @@ class ManifestAndWeb(unittest.TestCase):
         js_path = os.path.join(MODULE, "web", "main.js")
         script = f"""
 import assert from "node:assert/strict";
-import {{ formatMoscowReset, quotaView, bucketView, isAgyModel, selectedModel }} from {json.dumps("file://" + js_path)};
+import {{ formatMoscowReset, formatMoscowClock, quotaView, bucketView, isAgyModel, selectedModel }} from {json.dumps("file://" + js_path)};
 
 // 2026-11-27T08:55:00Z = 11:55 MSK
 const now = Date.UTC(2026, 10, 27, 8, 55, 0) / 1000;
@@ -239,9 +239,11 @@ const resetWk = Date.UTC(2026, 11, 4, 6, 25, 37) / 1000;
 // Полночь по Москве: 2026-11-27T21:05:00Z = 28.11 00:05 MSK (не 24:05!)
 const resetMid = Date.UTC(2026, 10, 27, 21, 5, 0) / 1000;
 
-assert.equal(formatMoscowReset(reset5h, now, "ru"), "14:25 МСК");
-assert.equal(formatMoscowReset(resetWk, now, "ru"), "04.12 09:25 МСК");
-assert.equal(formatMoscowReset(resetMid, now, "ru"), "28.11 00:05 МСК");
+assert.equal(formatMoscowReset(reset5h, now, "ru"), "14:25");
+assert.equal(formatMoscowReset(resetWk, now, "ru"), "04.12 09:25");
+assert.equal(formatMoscowReset(resetMid, now, "ru"), "28.11 00:05");
+assert.equal(formatMoscowReset(reset5h, now, "en"), "14:25");
+assert.equal(formatMoscowClock(reset5h, "ru"), "14:25");
 assert.equal(formatMoscowReset(0, now, "ru"), "");
 assert.equal(formatMoscowReset(null, now, "ru"), "");
 
@@ -266,9 +268,9 @@ const fresh = quotaView({{
 }}, now, "ru");
 assert.equal(fresh.ok, true);
 assert.equal(fresh.gemini.h5.pctText, "34%");
-assert.equal(fresh.gemini.h5.resetText, "14:25 МСК");
+assert.equal(fresh.gemini.h5.resetText, "14:25");
 assert.equal(fresh.gemini.weekly.pctText, "83%");
-assert.equal(fresh.gemini.weekly.resetText, "04.12 09:25 МСК");
+assert.equal(fresh.gemini.weekly.resetText, "04.12 09:25");
 assert.equal(fresh.claudeGpt.h5.pctText, "100%");
 assert.equal(fresh.claudeGpt.h5.resetText, "");
 

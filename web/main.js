@@ -12,7 +12,6 @@ const STR = {
     geminiWeek: "Gemini неделя",
     cg5h: "Claude/GPT 5ч",
     cgWeek: "Claude/GPT неделя",
-    msk: "МСК",
     noData: "Antigravity: нет свежих данных квоты",
     updated: "обновлено",
     reset: "сброс",
@@ -22,7 +21,6 @@ const STR = {
     geminiWeek: "Gemini week",
     cg5h: "Claude/GPT 5h",
     cgWeek: "Claude/GPT week",
-    msk: "MSK",
     noData: "Antigravity: no fresh quota data",
     updated: "updated",
     reset: "reset",
@@ -61,21 +59,19 @@ function moscowParts(sec) {
   return map;
 }
 
-export function formatMoscowReset(resetAt, nowSec, lang = "ru") {
+export function formatMoscowReset(resetAt, nowSec, _lang = "ru") {
   if (!Number.isFinite(resetAt) || resetAt <= 0) return "";
-  const s = STR[lang] || STR.en;
   const r = moscowParts(resetAt);
   const n = moscowParts(nowSec);
   const hhmm = `${r.hour}:${r.minute}`;
   const sameDay = r.year === n.year && r.month === n.month && r.day === n.day;
-  return sameDay ? `${hhmm} ${s.msk}` : `${r.day}.${r.month} ${hhmm} ${s.msk}`;
+  return sameDay ? hhmm : `${r.day}.${r.month} ${hhmm}`;
 }
 
-export function formatMoscowClock(sec, lang = "ru") {
+export function formatMoscowClock(sec, _lang = "ru") {
   if (!Number.isFinite(sec) || sec <= 0) return "";
-  const s = STR[lang] || STR.en;
   const p = moscowParts(sec);
-  return `${p.hour}:${p.minute} ${s.msk}`;
+  return `${p.hour}:${p.minute}`;
 }
 
 export function levelOf(pct) {
