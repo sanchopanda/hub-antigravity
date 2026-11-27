@@ -1,5 +1,16 @@
 # antigravity — сессии хаба на Antigravity (agy) и DeepSeek внутри них
 
+Модуль для [hub by icons8](https://github.com/icons8/hub) — открытого хаба для сессий Claude Code. Без хаба
+он не работает: модуль подключается к ядру через точки `launch.env`, `cli` и `doctor`.
+
+Установка на другом хабе (нужны ядро 2.6+, `agy` и вход в аккаунт Antigravity):
+
+```
+hub module add https://github.com/sanchopanda/hub-antigravity
+hub antigravity setup
+hub antigravity doctor
+```
+
 Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.1.1 — модуль включён в хабе (`HUB_CLAUDE` в службе,
 `agy 1.5.18`, `setup` выполнен). Скиллы agy настроены глобально (`~/.gemini/config/skills.json`), исполнители и
 мини-хабы идут через мост, их запреты держит хук agy.
