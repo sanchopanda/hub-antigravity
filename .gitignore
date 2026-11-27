@@ -2,3 +2,5 @@ __pycache__/
 *.pyc
 *.bak-*
 .DS_Store
+/bin/python
+/bin/real-claude

@@ -11,7 +11,12 @@ hub antigravity setup
 hub antigravity doctor
 ```
 
-Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.3.0 — модуль включён в хабе (`HUB_CLAUDE` в службе,
+Настройки читаются из `HUB_CONFIG`, `HUB_CONFIG_DIR` или системного каталога `~/.config/hub-core`.
+На Linux для службы с движком Claude переменную `HUB_CLAUDE` задают в systemd drop-in, затем перечитывают
+конфигурацию systemd и перезапускают службу. Хаб с `"host": "codex"` требует отдельной поддержки протокола
+Codex app-server: установка одной переменной `HUB_CLAUDE` для него недостаточна.
+
+Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.3.1 — модуль включён в хабе (`HUB_CLAUDE` в службе,
 `agy 1.5.18`, `setup` выполнен). Скиллы agy настроены глобально (`~/.gemini/config/skills.json`), исполнители и
 мини-хабы идут через мост, их запреты держит хук agy; в верхней полосе страницы хаба работает веб-виджет остатка квоты.
 

@@ -5,4 +5,5 @@
 here=${0%/*}
 py=python3
 [ -r "$here/python" ] && read -r py < "$here/python"
+command -v "$py" > /dev/null 2>&1 || py=python3
 exec "$py" -I "${here%/*}/deepseek_mcp.py" --ask "$@"

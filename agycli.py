@@ -61,6 +61,18 @@ def plist_has_shell(path=None):
     return os.path.realpath(m.group(1)) == os.path.realpath(SHELL), f"HUB_CLAUDE={m.group(1)}"
 
 
+def service_has_shell(platform=None, env=None):
+    """Проверяем окружение процесса, которое служба уже загрузила."""
+    platform = sys.platform if platform is None else platform
+    env = os.environ if env is None else env
+    value = env.get("HUB_CLAUDE")
+    if value:
+        return os.path.realpath(value) == os.path.realpath(SHELL), f"HUB_CLAUDE={value}"
+    if platform == "darwin" and not env.get("HUB_MODULE"):
+        return plist_has_shell()
+    return False, "HUB_CLAUDE не задан в окружении запущенной службы хаба"
+
+
 def doctor(cfg=None, run=subprocess.run):
     cfg = cfg or store.settings()
     out = []
@@ -75,11 +87,11 @@ def doctor(cfg=None, run=subprocess.run):
         out.append({"name": "antigravity: agy", "ok": False, "detail": "agy не установлен (шаг 4 плана: ставит владелец)"})
     out.append({"name": "antigravity: модели", "ok": bool(cfg["models"]),
                 "detail": ", ".join(f"{k}→{v or 'по умолчанию'}" for k, v in sorted(cfg["models"].items())) or "hub.json antigravity.models пуст"})
-    ok, text = plist_has_shell()
-    out.append({"name": "antigravity: HUB_CLAUDE", "ok": ok is not False, "detail": text + ("" if ok else "")})
-    real = os.path.join(os.path.dirname(SHELL), "real-claude")
-    out.append({"name": "antigravity: настоящий claude", "ok": True,
-                "detail": (open(real).read().strip() if os.path.exists(real) else "~/.local/bin/claude (по умолчанию)")})
+    ok, text = service_has_shell()
+    out.append({"name": "antigravity: HUB_CLAUDE", "ok": bool(ok), "detail": text})
+    real = agy_setup.real_claude_target()
+    out.append({"name": "antigravity: настоящий claude", "ok": bool(real),
+                "detail": real or "исполняемый файл Claude Code не найден"})
     b = store.block()
     out.append({"name": "antigravity: блок", "ok": b is None, "detail": (b.get("text") or b.get("reason")) if b else "нет"})
     mode = None
@@ -110,7 +122,7 @@ def handle(args, caller_owner=False, now=None):
                 "err": "", "code": code}
     if args[0] == "setup":
         if not caller_owner:
-            return {"out": "", "err": "setup пишет в общие настройки agy: запускает владелец или hub-dev по его слову\n", "code": 1}
+            return {"out": "", "err": "setup пишет в общие настройки agy: запускает владелец из терминала\n", "code": 1}
         base = args[args.index("--dir") + 1] if "--dir" in args and args.index("--dir") + 1 < len(args) else None
         dry = "--dry" in args
         lines = agy_setup.undo(base, dry) if "--undo" in args else agy_setup.setup(base, dry)

@@ -205,7 +205,7 @@ class FetchAndCache(unittest.TestCase):
 
 
 class ManifestAndWeb(unittest.TestCase):
-    def test_manifest_has_version_0_3_0_snapshot_key_and_web_plugin(self):
+    def test_manifest_has_snapshot_key_and_web_plugin(self):
         layer = os.path.realpath(os.path.expanduser("~/.hub-personal/code"))
         if layer not in sys.path:
             sys.path.insert(0, layer)
@@ -213,7 +213,7 @@ class ManifestAndWeb(unittest.TestCase):
         with open(os.path.join(MODULE, "module.json"), encoding="utf-8") as f:
             man = json.load(f)
         self.assertEqual(modules.validate(man, "module.json"), [])
-        self.assertEqual(man["version"], "0.3.0")
+        self.assertEqual(man["version"], "0.3.1")
         self.assertEqual(man["web"], "web/main.js")
         self.assertIn("antigravity_quota", man["snapshot"]["keys"])
         self.assertTrue(os.path.isfile(os.path.join(MODULE, "web", "main.js")))

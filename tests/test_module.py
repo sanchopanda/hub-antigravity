@@ -111,6 +111,17 @@ class Launch(Env):
 
 
 class Commands(Env):
+    def test_linux_standard_config_is_found(self):
+        os.environ.pop("HUB_CONFIG", None)
+        os.environ.pop("HUB_CONFIG_DIR", None)
+        os.environ["XDG_CONFIG_HOME"] = os.path.join(self.dir, "xdg")
+        self.addCleanup(os.environ.pop, "XDG_CONFIG_HOME", None)
+        target = os.path.join(os.environ["XDG_CONFIG_HOME"], "hub-core")
+        os.makedirs(target)
+        with open(os.path.join(target, "hub.json"), "w") as f:
+            json.dump({"antigravity": {"models": {"claude-agy": "gemini-test"}}}, f)
+        self.assertEqual(store.settings()["models"]["claude-agy"], "gemini-test")
+
     def test_status_shows_login_block_places_usage_and_deepseek(self):
         store.log_usage("s", "claude-agy", {"in": 100, "out": 10, "think": 5, "cache": 50}, 1000, "ok")
         store.log_deepseek("flash", 10, 5, 0.01)
@@ -157,6 +168,12 @@ class Commands(Env):
             f.write("<dict><key>HUB_X</key><string>1</string></dict>")
         self.assertEqual(agycli.plist_has_shell(plist)[0], False)
         self.assertIsNone(agycli.plist_has_shell(os.path.join(self.dir, "нет"))[0])
+
+    def test_linux_doctor_checks_effective_wrapper(self):
+        self.assertFalse(agycli.service_has_shell(platform="linux", env={})[0])
+        self.assertTrue(agycli.service_has_shell(
+            platform="linux", env={"HUB_CLAUDE": agycli.SHELL}
+        )[0])
 
 
 class Setup(Env):

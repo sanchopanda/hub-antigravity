@@ -39,7 +39,13 @@ def data_dir():
 def config_dir():
     if os.environ.get("HUB_CONFIG_DIR"):
         return os.environ["HUB_CONFIG_DIR"]
-    return os.path.expanduser("~/.config/hub-personal")
+    if os.environ.get("HUB_CONFIG"):
+        return os.path.dirname(os.path.abspath(os.environ["HUB_CONFIG"]))
+    xdg = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+    standard = os.path.join(xdg, "hub-core")
+    if os.path.isfile(os.path.join(standard, "hub.json")):
+        return standard
+    return os.path.join(xdg, "hub-personal")
 
 
 def hub_json_path():
