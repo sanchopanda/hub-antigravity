@@ -99,6 +99,13 @@ def agy_model(model, cfg=None):
     got = models.get(name)
     if got is None and name.startswith("codex/"):
         got = models.get(name[len("codex/"):])
+    bare = name[len("codex/"):] if name.startswith("codex/") else name
+    if got is None and bare == "claude-agy-hydrogen":
+        got = "gemini-4-hydrogen-high"
+    if got is None and bare.startswith("claude-agy-"):
+        candidate = bare[len("claude-agy-"):]
+        if candidate.startswith(("gemini-", "claude-", "gpt-oss-")):
+            got = candidate
     if got is None:
         return None
     got = str(got).strip()
@@ -112,7 +119,7 @@ def is_agy_model(model, cfg=None):
     """Модель Antigravity: имя с agy или явно заданная в antigravity.models."""
     name = str(model or "").lower()
     bare = name[len("codex/"):] if name.startswith("codex/") else name
-    return bool(AGY.search(name)) or bare in (cfg or settings())["models"]
+    return bool(AGY.search(name)) or bare in (cfg or settings())["models"] or bare.startswith("claude-agy-")
 
 
 # --- блок (квота / вход) -------------------------------------------------------------------------------------------

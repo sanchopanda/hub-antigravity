@@ -64,6 +64,8 @@ def _group_key(group):
     ids = [str(b.get("id") or "").lower() for b in buckets if isinstance(b, dict)]
     if "gemini" in name or any(i.startswith("gemini") for i in ids):
         return "gemini"
+    if "claude" in name or "gpt" in name or any(i.startswith("3p") for i in ids):
+        return "claude_gpt"
     return None
 
 
@@ -107,7 +109,7 @@ def parse_usage(text):
     groups = data.get("groups") if isinstance(data, dict) else None
     if not isinstance(groups, list):
         return None
-    out = {"gemini": None}
+    out = {"gemini": None, "claude_gpt": None}
     found = False
     for g in groups:
         if not isinstance(g, dict):
@@ -133,7 +135,8 @@ def parse_usage(text):
 
 def empty_record(now=None, ttl=QUOTA_TTL):
     now = time.time() if now is None else float(now)
-    return {"ok": False, "at": now, "fetched_at": None, "ttl_s": int(ttl), "gemini": None}
+    return {"ok": False, "at": now, "fetched_at": None, "ttl_s": int(ttl),
+            "gemini": None, "claude_gpt": None}
 
 
 def fetch(run=subprocess.run, agy=None, timeout=TIMEOUT, now=None, ttl=QUOTA_TTL):
@@ -150,7 +153,8 @@ def fetch(run=subprocess.run, agy=None, timeout=TIMEOUT, now=None, ttl=QUOTA_TTL
     parsed = parse_usage(getattr(cp, "stdout", ""))
     if not parsed:
         return empty_record(now, ttl=ttl)
-    return {"ok": True, "at": now, "fetched_at": now, "ttl_s": int(ttl), "gemini": parsed["gemini"]}
+    return {"ok": True, "at": now, "fetched_at": now, "ttl_s": int(ttl),
+            "gemini": parsed["gemini"], "claude_gpt": parsed["claude_gpt"]}
 
 
 def cache_path():
@@ -170,7 +174,7 @@ def load_cache(now=None, ttl=QUOTA_TTL):
     if age < 0 or age >= ttl:
         return None
     return {"ok": True, "at": now, "fetched_at": float(fetched), "ttl_s": int(ttl),
-            "gemini": rec.get("gemini")}
+            "gemini": rec.get("gemini"), "claude_gpt": rec.get("claude_gpt")}
 
 
 def save_cache(rec):

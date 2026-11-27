@@ -1,0 +1,36 @@
+.agy-model-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+}
+
+.agy-model-picker[hidden] {
+  display: none;
+}
+
+.agy-model-picker label {
+  color: var(--muted-foreground);
+}
+
+.agy-model-picker select {
+  min-height: 24px;
+  max-width: 30ch;
+  padding: 1px 24px 1px 7px;
+  border: 1px solid var(--border, #888);
+  border-radius: 6px;
+  background: var(--background, transparent);
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+}
+
+.hub-agy-session .stat-model {
+  display: none !important;
+}
+
+@media (max-width: 520px) {
+  .agy-model-picker select {
+    max-width: 21ch;
+  }
+}

@@ -29,6 +29,8 @@ class Stand(unittest.TestCase):
                           HUB_MODULE="antigravity", HOOK_LOG=self.sb.hook_log, FAKE_AGY_LOG=self.sb.agy_log,
                           FAKE_AGY_SCENARIO="echo", FAKE_CLAUDE_LOG=self.sb.claude_log, HUB_MOD_ANTIGRAVITY_AGY=self.sb.agy,
                           CLAUDE_CONFIG_DIR=os.path.join(self.sb.dir, "claude"))
+        # The suite may run inside an AGY session; its outer route must not leak into a plain Claude test.
+        os.environ.pop("HUB_MOD_ANTIGRAVITY_ROUTE", None)
         self.addCleanup(self.restore_env)
         from core import journal
         from core.daemon import Hub

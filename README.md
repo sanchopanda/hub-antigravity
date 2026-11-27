@@ -19,7 +19,7 @@ hub antigravity doctor
 в `$HUB_MOD_ANTIGRAVITY_ROOT/codex_bridge.py`. При обновлении модуль переносит установленные записи хука
 и MCP в конфигурации agy на актуальную версию.
 
-Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.3.7 — модуль включён в хабе (`HUB_CLAUDE` в службе,
+Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.3.8 — модуль включён в хабе (`HUB_CLAUDE` в службе,
 `agy 1.5.18`, `setup` выполнен). Скиллы agy настроены глобально (`~/.gemini/config/skills.json`), исполнители и
 мини-хабы идут через мост, их запреты держит хук agy; в верхней полосе страницы хаба работает веб-виджет остатка квоты.
 
@@ -27,8 +27,13 @@ hub antigravity doctor
 - Модель сессии `claude-agy` (id модели agy — `hub.json` → `antigravity.models`, «default» — agy по умолчанию).
   Только ручной выбор, лестница daybudget и ворота пула poolpass такие сессии не трогают.
   На хабе Codex модель задаётся как `codex/claude-agy`.
-  Дополнительные пункты `claude-opus-5-5` и `claude-sonnet-5-5` ведут через тот же маршрут к
-  `claude-opus-5-5-high` и `claude-sonnet-5-5-high` в `agy`.
+- Каталог моделей строится из `agy models`, кэшируется на 5 минут и отдаёт стабильные id
+  `claude-agy-<agy-id>`, понятные `displayName` и категории Gemini/Claude/GPT. Это покрывает все модели Gemini,
+  Opus/Sonnet 5.5, GPT-OSS и новые модели без правки UI. Alias `claude-agy-hydrogen` ведёт на
+  `gemini-4-hydrogen-high`; служебные `claude-agy`/`Antigravity` в меню моделей не выводятся.
+- Селектор модели Antigravity принадлежит модулю (`web/models.js`) и общий для Linux и Mac. В нём показываются
+  фактические имена (`Gemini 4 Neon High`, `Claude Opus 5.5 (High)`, `Claude Sonnet 5.5 (High)`), а привязка
+  к `agy` ID приходит из snapshot `antigravity_models`.
 - Ядро запускает `bin/claude` (`HUB_CLAUDE` в службе хаба). Для обычных сессий — одна проверка и `exec` настоящего
   claude (`bin/real-claude` или `~/.local/bin/claude`). Для `claude-agy` — `bridge.py`: один долгий процесс `agy -p=`
   со stream-json, события agy переводятся в события Claude Code, хуки ядра мост зовёт сам.
@@ -62,7 +67,7 @@ hub antigravity doctor
   адаптер отказывает в запуске. Связные сессии также не запускаются через agy.
 - `quota.py` + `web/main.js` + `web/quota.css` — веб-виджет квоты Antigravity в верхней полосе страницы хаба рядом с
   балансом DeepSeek (ключ снимка `antigravity_quota`, слот `topbar`). Фоновый поток опрашивает `agy -p "/usage" --output-format json`
-  с кэшем не дольше 5 минут (`moddata/antigravity/quota.json`), показывает две строки — `Gemini 5ч` и `Gemini неделя`
+  с кэшем не дольше 5 минут (`moddata/antigravity/quota.json`), показывает окна Gemini и Claude/GPT за 5 часов и неделю
   (процент остатка и время сброса по Москве; при отсутствии времени сброса оно не выводится). Если `agy` не ответил
   или кэш устарел — показывает прочерк `—`, не ошибку. Лимит основного движка хаб показывает отдельно.
 

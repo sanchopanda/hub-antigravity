@@ -81,7 +81,10 @@ class ParseUsage(unittest.TestCase):
         self.assertEqual(got["gemini"]["weekly"]["pct"], 83)
         self.assertIsNotNone(got["gemini"]["h5"]["reset_at"])
         self.assertIsNotNone(got["gemini"]["weekly"]["reset_at"])
-        self.assertNotIn("claude_gpt", got)
+        self.assertEqual(got["claude_gpt"]["h5"]["pct"], 100)
+        self.assertIsNone(got["claude_gpt"]["h5"]["reset_at"])
+        self.assertEqual(got["claude_gpt"]["weekly"]["pct"], 100)
+        self.assertIsNone(got["claude_gpt"]["weekly"]["reset_at"])
 
     def test_epoch_zero_and_garbage_reset_times_become_none(self):
         for raw in ("1970-01-01T00:00:00Z", "1970-01-01T00:00:00+00:00", "", None, "not-a-date", 12345):
@@ -148,7 +151,7 @@ class FetchAndCache(unittest.TestCase):
 
     def test_disk_cache_respects_5_minute_limit(self):
         rec = {"ok": True, "at": 1000.0, "fetched_at": 1000.0, "ttl_s": 300,
-               "gemini": {"h5": {"remaining": 0.5, "pct": 50, "reset_at": None}}}
+               "gemini": {"h5": {"remaining": 0.5, "pct": 50, "reset_at": None}}, "claude_gpt": None}
         quota.save_cache(rec)
         self.assertIsNotNone(quota.load_cache(now=1299.0))
         self.assertIsNone(quota.load_cache(now=1300.0))      # ровно 5 минут -> уже устарел
@@ -209,10 +212,13 @@ class ManifestAndWeb(unittest.TestCase):
         with open(os.path.join(MODULE, "module.json"), encoding="utf-8") as f:
             man = json.load(f)
         self.assertEqual(modules.validate(man, "module.json"), [])
-        self.assertEqual(man["version"], "0.3.7")
+        self.assertEqual(man["version"], "0.3.8")
         self.assertEqual(man["web"], "web/main.js")
         self.assertIn("antigravity_quota", man["snapshot"]["keys"])
+        self.assertIn("antigravity_models", man["snapshot"]["keys"])
         self.assertTrue(os.path.isfile(os.path.join(MODULE, "web", "main.js")))
+        self.assertTrue(os.path.isfile(os.path.join(MODULE, "web", "models.js")))
+        self.assertTrue(os.path.isfile(os.path.join(MODULE, "web", "models.css")))
         self.assertTrue(os.path.isfile(os.path.join(MODULE, "web", "quota.css")))
 
     def test_web_main_js_formatting_moscow_epoch_zero_and_fallback(self):
@@ -250,19 +256,21 @@ assert.equal(bucketView({{ pct: 10, reset_at: reset5h }}, now).level, "high");
 assert.equal(bucketView({{ pct: 25, reset_at: reset5h }}, now).level, "warn");
 assert.equal(bucketView({{ pct: 34, reset_at: reset5h }}, now).level, "ok");
 
-// Свежие данные: только Gemini
+// Свежие данные: Gemini + Claude/GPT
 const fresh = quotaView({{
   ok: true,
   fetched_at: now - 60,
   ttl_s: 300,
   gemini: {{ h5: {{ pct: 34, reset_at: reset5h }}, weekly: {{ pct: 83, reset_at: resetWk }} }},
+  claude_gpt: {{ h5: {{ pct: 100, reset_at: null }}, weekly: {{ pct: 100, reset_at: null }} }},
 }}, now, "ru");
 assert.equal(fresh.ok, true);
 assert.equal(fresh.gemini.h5.pctText, "34%");
 assert.equal(fresh.gemini.h5.resetText, "14:25 МСК");
 assert.equal(fresh.gemini.weekly.pctText, "83%");
 assert.equal(fresh.gemini.weekly.resetText, "04.12 09:25 МСК");
-assert.equal("claudeGpt" in fresh, false);
+assert.equal(fresh.claudeGpt.h5.pctText, "100%");
+assert.equal(fresh.claudeGpt.h5.resetText, "");
 
 // Устаревший кэш (> 5 мин) и ok:false -> прочерк, не ошибка
 for (const bad of [
@@ -274,6 +282,7 @@ for (const bad of [
   assert.equal(v.ok, false);
   assert.equal(v.gemini.h5.pctText, "—");
   assert.equal(v.gemini.weekly.pctText, "—");
+  assert.equal(v.claudeGpt, null);
 }}
 
 // Подсветка активной agy-сессии

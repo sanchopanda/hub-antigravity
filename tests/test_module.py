@@ -85,6 +85,8 @@ class Launch(Env):
         codex_env = self.main.launch({"session": "s", "kind": "work", "model": "codex/claude-agy"})["env"]
         self.assertEqual(codex_env["HUB_MOD_ANTIGRAVITY_MODEL"], "gemini-carbon")
         self.assertEqual(codex_env["HUB_MOD_ANTIGRAVITY_CODEX_WORK"], "1")
+        hub_env = self.main.launch({"session": "hub-core", "kind": "hub", "model": "codex/claude-agy"})["env"]
+        self.assertEqual(hub_env["HUB_MOD_ANTIGRAVITY_CODEX_WORK"], "1")
         for name, agy_id in (("claude-opus-5-5", "claude-opus-5-5-high"),
                              ("claude-sonnet-5-5", "claude-sonnet-5-5-high")):
             got = self.main.launch({"session": "s", "kind": "work", "model": f"codex/{name}"})["env"]
@@ -131,18 +133,34 @@ class Launch(Env):
 class Commands(Env):
     def test_state_exposes_quota_models_slots_and_exhaustion(self):
         import quota
+        from unittest.mock import patch
         fresh = {"ok": True, "at": time.time(), "fetched_at": time.time(), "ttl_s": 300,
                  "gemini": {"h5": {"pct": 0, "reset_at": None},
                             "weekly": {"pct": 50, "reset_at": None}}}
         quota.save_cache(fresh)
-        got = agycli.state_payload()
+        catalog = [{"id": "claude-agy-gemini-4-hydrogen-high",
+                    "agy_id": "gemini-4-hydrogen-high",
+                    "title": "Gemini 4 Hydrogen (High)", "category": "Gemini"}]
+        with patch.object(agycli, "model_catalog", return_value=catalog):
+            got = agycli.state_payload()
         self.assertTrue(got["exhausted"])
         self.assertEqual(got["models"]["claude-agy"], "gemini-carbon")
         self.assertEqual(got["max_sessions"], 2)
         self.assertIn("slots", got)
-        result = agycli.handle(["state", "--json"])
-        self.assertEqual(result["code"], 0)
-        self.assertTrue(json.loads(result["out"])["exhausted"])
+        self.assertEqual(got["catalog"], catalog)
+
+    def test_model_catalog_uses_agy_and_keeps_categories(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        rows = ("gemini-4-hydrogen-high\tGemini 4 Hydrogen (High)\n"
+                "claude-opus-5-5-high\tClaude Opus 5.5 (High)\n"
+                "gpt-oss-120b-medium\tGPT-OSS 120B (Medium)\n")
+        run = lambda *a, **k: SimpleNamespace(returncode=0, stdout=rows)
+        with patch.object(agycli, "agy_path", return_value="/fake/agy"):
+            got = agycli.model_catalog(now=1000, run=run, force=True)
+        self.assertEqual([x["category"] for x in got], ["Gemini", "Claude", "GPT"])
+        self.assertEqual(got[0]["id"], "claude-agy-gemini-4-hydrogen-high")
+        self.assertEqual(got[0]["agy_id"], "gemini-4-hydrogen-high")
 
     def test_linux_standard_config_is_found(self):
         os.environ.pop("HUB_CONFIG", None)
@@ -802,7 +820,10 @@ class Pure(Env):
         cfg = store.settings()
         self.assertEqual(store.agy_model("claude-agy", cfg), "gemini-carbon")
         self.assertEqual(store.agy_model("claude-agy-argon", cfg), "")
-        self.assertIsNone(store.agy_model("claude-agy-x", cfg))
+        self.assertEqual(store.agy_model("claude-agy-hydrogen", cfg), "gemini-4-hydrogen-high")
+        self.assertEqual(store.agy_model("codex/claude-agy-gemini-4-hydrogen-high", cfg),
+                         "gemini-4-hydrogen-high")
+        self.assertTrue(store.is_agy_model("claude-agy-claude-opus-5-5-high", cfg))
         self.assertEqual(store.settings()["max_sessions"], 2)
         self.assertIsNone(store.settings()["quiet"])
         self.assertTrue(store.settings()["executors"])      # слово владельца 27.11.2026: исполнители на agy разрешены

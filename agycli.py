@@ -14,6 +14,7 @@ import sweep  # noqa: E402
 USAGE = ("hub antigravity [status] | state [--json] | unblock | sweep [--all-back] | setup [--dry|--undo] [--dir <папка agy>] | doctor\n"
          "  status — вход, блок, места, ходы и токены, вызовы DeepSeek; unblock — снять блок;\n"
          "  state — состояние для модуля выбора провайдера: квота, блок, модели и места;\n"
+         "  models [--json] — актуальные модели agy с категориями;\n"
          "  sweep — что уведёт сессии с Antigravity при блоке (исполняет расписание: sweep.py);\n"
          "  setup — записи в настройки agy (с копией), --undo — снять.")
 SHELL = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bin", "claude")
@@ -119,6 +120,80 @@ def doctor(cfg=None, run=subprocess.run):
     return out
 
 
+MODELS_TTL = 300
+
+
+def _model_category(model_id):
+    if str(model_id).startswith("gemini"):
+        return "Gemini"
+    if str(model_id).startswith("claude"):
+        return "Claude"
+    if str(model_id).startswith("gpt-oss"):
+        return "GPT"
+    return "Другие"
+
+
+def _parse_models(text):
+    out = []
+    for line in str(text or "").splitlines():
+        parts = line.strip().split(None, 1)
+        if len(parts) != 2 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,79}", parts[0]):
+            continue
+        agy_id, title = parts
+        out.append({
+            "id": "claude-agy-" + agy_id,
+            "agy_id": agy_id,
+            "title": title.strip() or agy_id,
+            "displayName": title.strip() or agy_id,
+            "category": _model_category(agy_id),
+        })
+    return out
+
+
+def _normalize_models(rows):
+    """Read caches saved by earlier module versions (actual agy ids, displayName)."""
+    out = []
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        agy_id = str(row.get("agy_id") or row.get("id") or "").strip()
+        if not agy_id:
+            continue
+        wrapper = agy_id if agy_id.startswith("claude-agy-") else "claude-agy-" + agy_id
+        actual = str(row.get("agy_id") or agy_id)
+        title = str(row.get("title") or row.get("displayName") or actual)
+        out.append({
+            "id": wrapper,
+            "agy_id": actual,
+            "title": title,
+            "displayName": title,
+            "category": row.get("category") or _model_category(actual),
+        })
+    return out
+
+
+def model_catalog(now=None, run=subprocess.run, force=False):
+    """Stable session ids from the models currently offered by `agy models`, cached for five minutes."""
+    now = time.time() if now is None else float(now)
+    cache = os.path.join(store.data_dir(), "models.json")
+    saved = store.read_json(cache)
+    models = _normalize_models(saved.get("models")) if isinstance(saved, dict) else []
+    fetched = saved.get("fetched_at") if isinstance(saved, dict) else None
+    if not force and models and isinstance(fetched, (int, float)) \
+            and 0 <= now - fetched < MODELS_TTL:
+        return models
+    try:
+        result = run([agy_path(), "models"], capture_output=True, text=True,
+                     timeout=20, stdin=subprocess.DEVNULL)
+        fresh = _parse_models(result.stdout) if result.returncode == 0 else []
+    except (OSError, subprocess.SubprocessError):
+        fresh = []
+    if fresh:
+        store.write_json(cache, {"fetched_at": now, "models": fresh})
+        return fresh
+    return models
+
+
 def state_payload(now=None):
     """Состояние Antigravity для оркестратора: только собственные данные модуля."""
     import quota
@@ -140,6 +215,7 @@ def state_payload(now=None):
         "blocked": blocked,
         "quota": cached,
         "models": cfg["models"],
+        "catalog": model_catalog(now=now),
         "max_sessions": cfg["max_sessions"],
         "slots": [{"number": number, "session": session} for number, session in slots],
     }
@@ -152,6 +228,9 @@ def handle(args, caller_owner=False, now=None):
         return {"out": "\n".join(status(now=now)) + "\n", "err": "", "code": 0}
     if args == ["state", "--json"]:
         return {"out": json.dumps(state_payload(now=now), ensure_ascii=False) + "\n", "err": "", "code": 0}
+    if args == ["models", "--json"]:
+        return {"out": json.dumps({"ok": True, "models": model_catalog(now=now)}, ensure_ascii=False) + "\n",
+                "err": "", "code": 0}
     if args == ["unblock"]:
         had = store.block_record()
         store.clear_block()
