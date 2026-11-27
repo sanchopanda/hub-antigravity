@@ -94,6 +94,20 @@ class Launch(Env):
             self.assertEqual(got["HUB_MOD_ANTIGRAVITY_MODEL"], agy_id)
             self.assertEqual(got["HUB_MOD_ANTIGRAVITY_CODEX_WORK"], "1")
 
+    def test_quota_notification_uses_a_valid_state_key(self):
+        keys = []
+        def check_key(key, *args):
+            import re
+            self.assertRegex(key, r"^[a-z0-9_.-]+$")
+            keys.append(key)
+            return None
+        with patch.object(self.main.store, "blocks", return_value={"gemini": {"reason":"quota", "at":1}}), \
+             patch.object(self.main.hubmod.state, "get", side_effect=check_key), \
+             patch.object(self.main.hubmod.state, "set", side_effect=check_key), \
+             patch.object(self.main.hubmod, "fact"):
+            self.main.watch_once(now=2)
+        self.assertEqual(keys, ["notified.gemini", "notified.gemini"])
+
     def test_the_default_model_of_the_hub_counts_for_a_new_session(self):
         self.assertEqual(self.main.launch({"session": "s"}, default="claude-agy")["env"]["HUB_MOD_ANTIGRAVITY_ROUTE"], "1")
         self.assertEqual(self.main.launch({"session": "s", "model": "sonnet"}, default="claude-agy"), {})   # своя модель сильнее

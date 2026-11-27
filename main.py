@@ -87,7 +87,7 @@ def watch_once(now=None):
     sent = []
     for group, rec in store.blocks(now).items():
         key = f"antigravity-{rec['reason']}-{group}:{int(rec.get('at') or 0)}"
-        mark = f"{NOTIFIED}:{group}"
+        mark = f"{NOTIFIED}.{group}"
         if hubmod.state.get(mark) == key:
             continue
         label = store.GROUP_LABEL.get(group, group)
@@ -124,8 +124,8 @@ def loop():
             catalog = {"models": agy_cmd.model_catalog(), "aliases": store.settings().get("models") or {}}
             if hubmod.state.get("antigravity_models") != catalog:
                 hubmod.state.set("antigravity_models", catalog)
-            watch_once()
             agy_setup.sync_managed_paths()
+            watch_once()
             agy_setup.sync_skills()   # обновился слой хаба или появился проект — скиллы в конфиге agy догоняют
         except Exception as e:  # noqa: BLE001 — один плохой проход не останавливает слежение
             print(f"antigravity: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
