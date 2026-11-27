@@ -61,18 +61,22 @@ def mask(text, key):
 
 def load_key(path=None):
     """Ключ DeepSeek из engines.json: только если файл виден лишь владельцу (0600), иначе отказ."""
-    path = path or os.path.join(store.config_dir(), "engines.json")
+    if path is None:
+        path = os.path.join(store.config_dir(), "engines.json")
+        if not os.path.exists(path):
+            path = os.path.join(store.config_dir(), "deepseek-key")
+    is_plain = os.path.basename(path) == "deepseek-key"
     try:
         st = os.stat(path)
     except OSError:
-        raise Refused("нет файла с ключом (engines.json)") from None
+        raise Refused("нет файла с ключом (engines.json или deepseek-key)") from None
     if st.st_mode & 0o077:
-        raise Refused(f"права engines.json {oct(st.st_mode & 0o777)[2:]}, нужны 600 — ключ не читаю")
+        raise Refused(f"права {os.path.basename(path)} {oct(st.st_mode & 0o777)[2:]}, нужны 600 — ключ не читаю")
     try:
         with open(path, encoding="utf-8") as f:
-            key = ((json.load(f) or {}).get("keys") or {}).get("deepseek")
+            key = f.read().strip() if is_plain else ((json.load(f) or {}).get("keys") or {}).get("deepseek")
     except (OSError, ValueError):
-        raise Refused("engines.json не читается") from None
+        raise Refused("файл ключа не читается") from None
     if not isinstance(key, str) or not key or any(c.isspace() for c in key):
         raise Refused("ключа deepseek в engines.json нет")
     return key

@@ -1,0 +1,13 @@
+#!/bin/sh
+# Обычные сессии и служебные вызовы идут в прежний Codex.
+here=${0%/*}
+if [ "${1:-}" = --antigravity-probe ]; then
+    printf '%s\n' antigravity-codex/1
+    exit 0
+fi
+if [ "${1:-}" = app-server ] && [ -n "${HUB_SESSION:-}" ] && [ "${HUB_MOD_ANTIGRAVITY_ROUTE:-}" = 1 ]; then
+    py=${HUB_MOD_ANTIGRAVITY_PYTHON:-python3}
+    exec "$py" -I "${here%/*}/codex_bridge.py"
+fi
+real=${HUB_ANTIGRAVITY_REAL_CODEX:-$HOME/.local/bin/codex}
+exec "$real" "$@"

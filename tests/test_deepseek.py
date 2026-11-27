@@ -78,6 +78,19 @@ class Base(unittest.TestCase):
                     "HUB_BUDGET_FILE": self.budget_file, "HUB_MOD_ANTIGRAVITY_HUB_TIMEOUT": "3"}
         self.addCleanup(__import__("shutil").rmtree, self.dir, True)
 
+    def test_plain_key_is_read_from_linux_hub_configuration(self):
+        from unittest.mock import patch
+        os.remove(os.path.join(self.conf, "engines.json"))
+        path = os.path.join(self.conf, "deepseek-key")
+        with open(path, "w", encoding="utf-8") as stream:
+            stream.write(KEY + "\n")
+        os.chmod(path, 0o600)
+        with patch.dict(os.environ, {"HUB_CONFIG_DIR": self.conf}):
+            self.assertEqual(ds.load_key(), KEY)
+            os.chmod(path, 0o644)
+            with self.assertRaises(ds.Refused):
+                ds.load_key()
+
     def write_keys(self, keys, mode=0o600):
         path = os.path.join(self.conf, "engines.json")
         with open(path, "w") as f:

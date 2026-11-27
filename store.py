@@ -41,6 +41,12 @@ def config_dir():
         return os.environ["HUB_CONFIG_DIR"]
     if os.environ.get("HUB_CONFIG"):
         return os.path.dirname(os.path.abspath(os.environ["HUB_CONFIG"]))
+    state = os.environ.get("HUB_STATE_DIR")
+    if state:
+        instance = read_json(os.path.join(state, "instance.json"))
+        directory = instance.get("config_dir") if isinstance(instance, dict) and instance.get("name") else None
+        if isinstance(directory, str) and directory:
+            return directory
     xdg = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
     standard = os.path.join(xdg, "hub-core")
     if os.path.isfile(os.path.join(standard, "hub.json")):
@@ -275,11 +281,21 @@ def conv(uuid):
 
 
 def set_conv(uuid, **fields):
-    data = read_json(convs_path())
-    rec = data.get(uuid) if isinstance(data.get(uuid), dict) else {}
-    rec.update(fields)
-    data[uuid] = rec
-    write_json(convs_path(), data)
+    path = convs_path()
+    with open(path + ".lock", "a", encoding="utf-8") as lock:
+        os.chmod(lock.name, 0o600)
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            with open(path, encoding="utf-8") as stream:
+                data = json.load(stream)
+        except FileNotFoundError:
+            data = {}
+        if not isinstance(data, dict):
+            raise ValueError("Не удалось прочитать беседы Antigravity")
+        rec = data.get(uuid) if isinstance(data.get(uuid), dict) else {}
+        rec.update(fields)
+        data[uuid] = rec
+        write_json(path, data)
     return rec
 
 

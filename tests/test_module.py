@@ -10,6 +10,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from helpers import HERE, MODULE, UUID  # noqa: E402
@@ -122,6 +123,16 @@ class Commands(Env):
             json.dump({"antigravity": {"models": {"claude-agy": "gemini-test"}}}, f)
         self.assertEqual(store.settings()["models"]["claude-agy"], "gemini-test")
 
+    def test_instance_config_is_taken_from_anchor(self):
+        os.environ.pop("HUB_CONFIG", None)
+        os.environ.pop("HUB_CONFIG_DIR", None)
+        state = os.environ["HUB_STATE_DIR"]
+        os.makedirs(state)
+        target = os.path.join(self.dir, "instance-config")
+        with open(os.path.join(state, "instance.json"), "w", encoding="utf-8") as stream:
+            json.dump({"name": "personal", "config_dir": target}, stream)
+        self.assertEqual(store.config_dir(), target)
+
     def test_status_shows_login_block_places_usage_and_deepseek(self):
         store.log_usage("s", "claude-agy", {"in": 100, "out": 10, "think": 5, "cache": 50}, 1000, "ok")
         store.log_deepseek("flash", 10, 5, 0.01)
@@ -174,6 +185,9 @@ class Commands(Env):
         self.assertTrue(agycli.service_has_shell(
             platform="linux", env={"HUB_CLAUDE": agycli.SHELL}
         )[0])
+        wrapper = os.path.join(MODULE, "bin", "codex")
+        self.assertTrue(agycli.service_has_shell(platform="linux", env={"HUB_CODEX_BIN": wrapper}, host="codex")[0])
+        self.assertFalse(agycli.service_has_shell(platform="linux", env={}, host="codex")[0])
 
 
 class Setup(Env):
@@ -221,6 +235,28 @@ class Setup(Env):
         again = agy_setup.setup(self.g, python="/py", claude="/real/claude", here=self.mod)
         self.assertTrue(all("уже настроен" in line for line in again[:3]), again)
         self.assertEqual(len([f for f in os.listdir(os.path.join(self.g, "config")) if ".bak-hub-" in f]), 1)
+
+    def test_updated_module_moves_only_existing_managed_paths(self):
+        agy_setup.setup(self.g, python="/py", claude="/real/claude", here=self.mod)
+        newer = os.path.join(self.dir, "new-module")
+        with patch.object(agy_setup, "HERE", newer):
+            changed = agy_setup.sync_managed_paths(self.g)
+            self.assertEqual(len(changed), 2)
+            hooks = json.load(open(os.path.join(self.g, "config", "hooks.json")))
+            self.assertIn(os.path.join(newer, "agy_guard.py"), json.dumps(hooks))
+            mcp = json.load(open(os.path.join(self.g, "config", "mcp_config.json")))
+            self.assertEqual(mcp["mcpServers"]["hub-deepseek"]["args"], [os.path.join(newer, "deepseek_mcp.py")])
+            self.assertEqual(mcp["mcpServers"]["other"], {"command": "x"})
+            self.assertEqual(agy_setup.sync_managed_paths(self.g), [])
+
+    def test_update_does_not_restore_removed_managed_hook(self):
+        agy_setup.setup(self.g, python="/py", claude="/real/claude", here=self.mod)
+        hooks_path = os.path.join(self.g, "config", "hooks.json")
+        with open(hooks_path, "w", encoding="utf-8") as stream:
+            json.dump({"hooks": {"PreToolUse": []}}, stream)
+        with patch.object(agy_setup, "HERE", os.path.join(self.dir, "new-module")):
+            agy_setup.sync_managed_paths(self.g)
+        self.assertEqual(json.load(open(hooks_path))["hooks"]["PreToolUse"], [])
 
     def test_dry_run_changes_nothing(self):
         before = json.load(open(os.path.join(self.g, "config", "mcp_config.json")))
@@ -491,6 +527,7 @@ class Sweep(Env):
 
 
 class Guard(Env):
+    @patch.dict(os.environ, {"HUB_ON_CODEX": ""})
     def test_only_hub_sessions_are_guarded_and_only_kill_by_pattern(self):
         store.set_conv(UUID, conv="conv-hub", session="s")
         deny = agy_guard.decide({"conversation_id": "conv-hub", "tool_name": "run_command", "tool_input": {"command": "pkill -f node"}})
@@ -501,8 +538,14 @@ class Guard(Env):
         for cmd in ("ls", "kill 123", "git log --grep pkillish", "echo pgrepx"):
             self.assertIsNone(agy_guard.decide({"conversation_id": "conv-hub", "tool_name": "run_command", "tool_input": {"command": cmd}}), cmd)
         # ручной agy владельца и чужие инструменты — ничего
-        self.assertIsNone(agy_guard.decide({"conversation_id": "чужая", "tool_name": "run_command", "tool_input": {"command": "pkill x"}}))
+        with patch.dict(os.environ, {"HUB_SESSION": ""}):
+            self.assertIsNone(agy_guard.decide({"conversation_id": "чужая", "tool_name": "run_command", "tool_input": {"command": "pkill x"}}))
         self.assertIsNone(agy_guard.decide({"conversation_id": "conv-hub", "tool_name": "view_file", "tool_input": {"command": "pkill x"}}))
+
+    def test_unknown_hub_conversation_is_denied(self):
+        with patch.dict(os.environ, {"HUB_SESSION": "session"}):
+            result = agy_guard.decide({"conversationId": "unknown", "toolCall": {"name": "run_command"}})
+        self.assertEqual(result["decision"], "deny")
 
     def test_the_hook_process_prints_json_for_deny_and_stays_silent_otherwise(self):
         store.set_conv(UUID, conv="conv-hub", session="s")

@@ -12,6 +12,7 @@
 import json
 import os
 import re
+import shlex
 import shutil
 import sys
 import time
@@ -305,6 +306,43 @@ def sync_skills(base=None, dry=False, man=None, save=True, force=False):
         if save:
             store.write_json(manifest_path(), data_man)
     return path, changed
+
+
+def sync_managed_paths(base=None):
+    """Переносит уже установленные хук и MCP на текущую версию модуля."""
+    paths_ = paths(gemini_dir(base))
+    manifest = store.read_json(manifest_path())
+    changed = []
+    for kind, filename in (("hooks", "agy_guard.py"), ("mcp", "deepseek_mcp.py")):
+        path = paths_[kind]
+        if path not in manifest:
+            continue
+        before = read(path)
+        after = json.loads(json.dumps(before))
+        if kind == "hooks":
+            groups = (after.get("hooks") or {}).get("PreToolUse") or []
+            for group in groups:
+                for hook in group.get("hooks") or []:
+                    if hook.get("type") != "command":
+                        continue
+                    try:
+                        parts = shlex.split(hook.get("command") or "")
+                    except ValueError:
+                        continue
+                    if len(parts) >= 2 and os.path.basename(parts[1]) == filename:
+                        parts[1] = os.path.join(HERE, filename)
+                        hook["command"] = shlex.join(parts)
+        else:
+            server = (after.get("mcpServers") or {}).get(SERVER)
+            if isinstance(server, dict) and isinstance(server.get("args"), list):
+                server["args"] = [
+                    os.path.join(HERE, filename) if isinstance(arg, str) and os.path.basename(arg) == filename else arg
+                    for arg in server["args"]
+                ]
+        if after != before:
+            write(path, after)
+            changed.append(path)
+    return changed
 
 
 def setup(base=None, dry=False, python=None, claude=None, here=None):

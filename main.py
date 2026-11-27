@@ -44,7 +44,12 @@ def launch(req, cfg=None, default=None):
         if mid is None:
             return {}       # id модели не задан: claude откажет понятной ошибкой модели, сессия не уйдёт молча на Sonnet
         # "" ядро вырезает из окружения (modrun: пустая строка удаляет переменную) — по умолчанию agy шлём метку "default"
-        return {"env": {**base, "HUB_MOD_ANTIGRAVITY_ROUTE": "1", "HUB_MOD_ANTIGRAVITY_MODEL": mid or "default"}}
+        env = {**base, "HUB_MOD_ANTIGRAVITY_ROUTE": "1", "HUB_MOD_ANTIGRAVITY_MODEL": mid or "default",
+               "HUB_MOD_ANTIGRAVITY_ROOT": HERE,
+               "HUB_MOD_ANTIGRAVITY_NAME": str(asked)}
+        if req.get("kind") == "work":
+            env["HUB_MOD_ANTIGRAVITY_CODEX_WORK"] = "1"
+        return {"env": env}
     if req.get("resume") and req.get("session"):
         uuid = next((u for u, rec in store.read_json(store.convs_path()).items()
                      if isinstance(rec, dict) and rec.get("session") == req["session"]), None)
@@ -113,6 +118,7 @@ def loop():
     while True:
         try:
             watch_once()
+            agy_setup.sync_managed_paths()
             agy_setup.sync_skills()   # обновился слой хаба или появился проект — скиллы в конфиге agy догоняют
         except Exception as e:  # noqa: BLE001 — один плохой проход не останавливает слежение
             print(f"antigravity: {type(e).__name__}: {e}", file=sys.stderr, flush=True)

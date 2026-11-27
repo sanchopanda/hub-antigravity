@@ -39,14 +39,40 @@ def tool_call(body):
     return name, args
 
 
+def project_denial(paths):
+    """Запреты и запросы проекта проверяются при каждом вызове инструмента."""
+    if not isinstance(paths, list) or not all(isinstance(path, str) for path in paths):
+        return "Antigravity: некорректный список правил проекта"
+    for path in paths:
+        try:
+            with open(path, encoding="utf-8") as stream:
+                data = json.load(stream)
+            permissions = data.get("permissions") or {}
+            if not isinstance(permissions, dict):
+                raise ValueError("permissions")
+        except FileNotFoundError:
+            continue
+        except (OSError, ValueError, TypeError, AttributeError):
+            return "Antigravity: не удалось прочитать правила проекта"
+        if permissions.get("deny") or permissions.get("ask"):
+            return "Antigravity: правила проекта deny/ask пока не поддерживаются"
+    return None
+
+
 def decide(body):
     """{"decision":"deny","reason":…} или None."""
     uuid = store.conv_by_id(conversation(body))
     if not uuid:
+        if os.environ.get("HUB_SESSION"):
+            return {"decision": "deny", "reason": "Antigravity: беседа сессии хаба ещё не распознана"}
         return None       # не сессия хаба: ручной agy владельца
     tool, args = tool_call(body)
     cwd = body.get("cwd") if isinstance(body.get("cwd"), str) else None
-    why = deny.subagent_hit(tool) or deny.check(deny.read_rules(uuid), tool, args, cwd) or deny.guard_hit(tool, args, cwd)
+    rules = deny.read_rules(uuid)
+    if os.environ.get("HUB_ON_CODEX") == "1" and "project_settings" not in rules:
+        return {"decision": "deny", "reason": "Antigravity: нет проверенных правил сессии"}
+    why = (project_denial(rules.get("project_settings")) if "project_settings" in rules else None)
+    why = why or deny.subagent_hit(tool) or deny.check(rules, tool, args, cwd) or deny.guard_hit(tool, args, cwd)
     if why:
         return {"decision": "deny", "reason": why}
     if not tool or tool in deny.SHELL_TOOLS:
@@ -62,8 +88,9 @@ def main():
         out = decide(body if isinstance(body, dict) else {})
         if out:
             sys.stdout.write(json.dumps(out, ensure_ascii=False))
-    except Exception:   # noqa: BLE001 — хук не ломает agy
-        pass
+    except Exception:   # noqa: BLE001
+        if os.environ.get("HUB_SESSION"):
+            sys.stdout.write(json.dumps({"decision": "deny", "reason": "Antigravity: ошибка проверки ограничений"}))
 
 
 if __name__ == "__main__":

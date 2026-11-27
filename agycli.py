@@ -61,10 +61,21 @@ def plist_has_shell(path=None):
     return os.path.realpath(m.group(1)) == os.path.realpath(SHELL), f"HUB_CLAUDE={m.group(1)}"
 
 
-def service_has_shell(platform=None, env=None):
+def service_has_shell(platform=None, env=None, host=None, run=subprocess.run):
     """Проверяем окружение процесса, которое служба уже загрузила."""
     platform = sys.platform if platform is None else platform
     env = os.environ if env is None else env
+    if host == "codex":
+        value = env.get("HUB_CODEX_BIN")
+        if not value:
+            return False, "Оболочка Codex для Antigravity не задана в окружении службы"
+        try:
+            result = run([value, "--antigravity-probe"], capture_output=True, text=True, timeout=5,
+                         stdin=subprocess.DEVNULL)
+        except (OSError, subprocess.SubprocessError):
+            return False, "Не удалось проверить оболочку Codex"
+        ok = result.returncode == 0 and result.stdout.strip() == "antigravity-codex/1"
+        return ok, f"Маршрут через {value}" if ok else "Оболочка Codex ещё не подключена к Antigravity"
     value = env.get("HUB_CLAUDE")
     if value:
         return os.path.realpath(value) == os.path.realpath(SHELL), f"HUB_CLAUDE={value}"
@@ -87,8 +98,9 @@ def doctor(cfg=None, run=subprocess.run):
         out.append({"name": "antigravity: agy", "ok": False, "detail": "agy не установлен (шаг 4 плана: ставит владелец)"})
     out.append({"name": "antigravity: модели", "ok": bool(cfg["models"]),
                 "detail": ", ".join(f"{k}→{v or 'по умолчанию'}" for k, v in sorted(cfg["models"].items())) or "hub.json antigravity.models пуст"})
-    ok, text = service_has_shell()
-    out.append({"name": "antigravity: HUB_CLAUDE", "ok": bool(ok), "detail": text})
+    host = store.read_json(store.hub_json_path()).get("host")
+    ok, text = service_has_shell(host=host)
+    out.append({"name": "antigravity: маршрут", "ok": bool(ok), "detail": text})
     real = agy_setup.real_claude_target()
     out.append({"name": "antigravity: настоящий claude", "ok": bool(real),
                 "detail": real or "исполняемый файл Claude Code не найден"})
@@ -96,9 +108,12 @@ def doctor(cfg=None, run=subprocess.run):
     out.append({"name": "antigravity: блок", "ok": b is None, "detail": (b.get("text") or b.get("reason")) if b else "нет"})
     mode = None
     keys = os.path.join(store.config_dir(), "engines.json")
+    if not os.path.exists(keys):
+        keys = os.path.join(store.config_dir(), "deepseek-key")
     if os.path.exists(keys):
         mode = oct(os.stat(keys).st_mode & 0o777)[2:]
-    out.append({"name": "antigravity: ключ DeepSeek", "ok": mode == "600", "detail": f"engines.json права {mode or 'файла нет'}"})
+    out.append({"name": "antigravity: ключ DeepSeek", "ok": mode == "600",
+                "detail": f"{os.path.basename(keys)} права {mode or 'файла нет'}"})
     return out
 
 

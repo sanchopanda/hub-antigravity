@@ -13,10 +13,13 @@ hub antigravity doctor
 
 Настройки читаются из `HUB_CONFIG`, `HUB_CONFIG_DIR` или системного каталога `~/.config/hub-core`.
 На Linux для службы с движком Claude переменную `HUB_CLAUDE` задают в systemd drop-in, затем перечитывают
-конфигурацию systemd и перезапускают службу. Хаб с `"host": "codex"` требует отдельной поддержки протокола
-Codex app-server: установка одной переменной `HUB_CLAUDE` для него недостаточна.
+конфигурацию systemd и перезапускают службу. На хабе с `"host": "codex"` оболочка `bin/codex` переводит
+сессии `claude-agy` на протокол agy, остальные вызовы передаёт в `HUB_ANTIGRAVITY_REAL_CODEX` или обычный Codex.
+Если у хаба уже есть оболочка Codex, она должна передать вызовы с маршрутом `HUB_MOD_ANTIGRAVITY_ROUTE=1`
+в `$HUB_MOD_ANTIGRAVITY_ROOT/codex_bridge.py`. При обновлении модуль переносит установленные записи хука
+и MCP в конфигурации agy на актуальную версию.
 
-Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.3.1 — модуль включён в хабе (`HUB_CLAUDE` в службе,
+Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.3.2 — модуль включён в хабе (`HUB_CLAUDE` в службе,
 `agy 1.5.18`, `setup` выполнен). Скиллы agy настроены глобально (`~/.gemini/config/skills.json`), исполнители и
 мини-хабы идут через мост, их запреты держит хук agy; в верхней полосе страницы хаба работает веб-виджет остатка квоты.
 
@@ -44,10 +47,15 @@ Codex app-server: установка одной переменной `HUB_CLAUDE
   `conversationId` и обходят правила сессии, `send_message` (достаёт до чужих бесед `agy` по `conversationId`),
   а также запись в сам слой запретов (`rules/`, `~/.gemini/config`).
   Ручной `agy` владельца хук не трогает. Работает и на новой сессии, и после `--resume` (передача от Claude → agy и повторный запуск).
-- `deepseek_mcp.py` — MCP-сервер `deepseek_ask`; запасной путь без MCP — `bin/deepseek-ask`. Ключ — только из
-  `engines.json` (`0600`), деньги — `hub budget --json`, потолок инструмента `antigravity.deepseek.day_usd` (0,5 $).
+- `deepseek_mcp.py` — MCP-сервер `deepseek_ask`; запасной путь без MCP — `bin/deepseek-ask`. Ключ берётся из
+  `engines.json` или файла `deepseek-key` в конфигурации хаба с правами `0600`. Деньги — `hub budget --json`,
+  потолок инструмента `antigravity.deepseek.day_usd` (0,5 $).
 - `sweep.py` — задание расписания: на время блока уводит сессии agy туда, куда ведёт лестница, потом возвращает.
 - `handoff.py` — выжимка ходов при смене движка (`agy` → Claude/DeepSeek: оболочка; обратно: мост).
+- Для Codex `codex_bridge.py` хранит собственную ветку agy по идентификатору сессии хаба. При переходе с
+  Codex открывается отдельная беседа agy, при возвращении на Codex сохраняется его исходная ветка. Режимы
+  с интерактивным подтверждением каждого действия и правила проекта `deny/ask` пока не поддержаны:
+  адаптер отказывает в запуске. Связные сессии также не запускаются через agy.
 - `quota.py` + `web/main.js` + `web/quota.css` — веб-виджет квоты Antigravity в верхней полосе страницы хаба рядом с
   балансом DeepSeek (ключ снимка `antigravity_quota`, слот `topbar`). Фоновый поток опрашивает `agy -p "/usage" --output-format json`
   с кэшем не дольше 5 минут (`moddata/antigravity/quota.json`), показывает две строки — `Gemini 5ч` и `Gemini неделя`
