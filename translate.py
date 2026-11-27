@@ -63,6 +63,43 @@ class Turn:
                             "cache_read_input_tokens": usage["cache"], "cache_creation_input_tokens": 0}
         return self._msg("assistant", msg)
 
+    @staticmethod
+    def _ready_cut(buf):
+        """Граница готового текста для потоковой отдачи при ACTIVE: завершённый абзац (\\n\\n) или строка >= 100 символов без разрыва ```-блока."""
+        if not buf:
+            return 0
+        pos = len(buf)
+        while True:
+            para = buf.rfind("\n\n", 0, pos)
+            if para == -1:
+                break
+            if buf[:para].strip() and buf[:para].count("```") % 2 == 0:
+                return para + 2
+            pos = para
+        pos = len(buf)
+        while True:
+            nl = buf.rfind("\n", 0, pos)
+            if nl == -1:
+                return 0
+            if len(buf[:nl].strip()) >= 100 and buf[:nl].count("```") % 2 == 0:
+                return nl + 1
+            pos = nl
+
+    def _drain_text(self, idx):
+        chunks = self.texts.get(idx)
+        if not chunks or idx in self.flushed:
+            return []
+        buf = "".join(chunks)
+        cut = self._ready_cut(buf)
+        if cut <= 0:
+            return []
+        head, tail = buf[:cut].strip(), buf[cut:]
+        self.texts[idx] = [tail] if tail else []
+        if not head:
+            return []
+        self.said = True
+        return [self._assistant({"type": "text", "text": head})]
+
     def _flush_text(self, idx):
         text = "".join(self.texts.pop(idx, [])).strip()
         if idx in self.flushed or not text:
@@ -111,11 +148,14 @@ class Turn:
             self.last_usage = usage_numbers(ev["usage"])
         out = []
         if stype == "agent_response":
-            # живая проба agy 1.5.18: text_delta — куски текста на ACTIVE и завершающий фрагмент на DONE; копим и отдаём при DONE
+            # живая проба agy 1.5.18: text_delta — куски текста на ACTIVE и завершающий фрагмент на DONE;
+            # готовые абзацы (и длинные завершённые строки) отдаём по мере генерации, остаток — при DONE без дублирования
             if ev.get("text_delta"):
                 self.texts.setdefault(idx, []).append(str(ev["text_delta"]))
             if state == "DONE":
                 out += self._flush_text(idx)
+            else:
+                out += self._drain_text(idx)
         elif stype == "tool":
             info = ev.get("tool_info") if isinstance(ev.get("tool_info"), dict) else {}
             if idx not in self.tools:

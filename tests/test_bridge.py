@@ -115,6 +115,33 @@ class Translation(Base):
         self.assertEqual(res["result"], "ок")
         self.assertFalse([m for m in p.seen if m.get("_bad")])
 
+    def test_text_delta_streams_paragraphs_during_active_without_duplication(self):
+        import translate
+        turn = translate.Turn("u1", "claude-agy")
+        turn.feed({"event": "init", "conversation_id": "conv-stream"})
+        # Незакрытый кусок без конца абзаца ждёт
+        self.assertEqual(turn.feed({"event": "step_update", "step_index": 1, "state": "ACTIVE",
+                                    "step_type": "agent_response", "text_delta": "Первый "}), [])
+        # После \n\n первый абзац сразу уходит в поток ещё на ACTIVE
+        got = turn.feed({"event": "step_update", "step_index": 1, "state": "ACTIVE",
+                         "step_type": "agent_response", "text_delta": "абзац.\n\n```py\nprint(1)\n"})
+        self.assertEqual([m["message"]["content"][0]["text"] for m in got], ["Первый абзац."])
+        # Незакрытый блок кода не режется на \n\n до закрытия ```
+        self.assertEqual(turn.feed({"event": "step_update", "step_index": 1, "state": "ACTIVE",
+                                    "step_type": "agent_response", "text_delta": "\nx = 2\n"}), [])
+        # После закрытия блока кода и \n\n отдаётся сразу
+        got2 = turn.feed({"event": "step_update", "step_index": 1, "state": "ACTIVE",
+                          "step_type": "agent_response", "text_delta": "```\n\nХвост"})
+        self.assertEqual([m["message"]["content"][0]["text"] for m in got2], ["```py\nprint(1)\n\nx = 2\n```"])
+        # При DONE отдаётся только остаток "Хвост", без дублирования
+        done = turn.feed({"event": "step_update", "step_index": 1, "state": "DONE",
+                          "step_type": "agent_response", "text_delta": ""})
+        self.assertEqual([m["message"]["content"][0]["text"] for m in done], ["Хвост"])
+        # На result дублирования нет
+        res = turn.feed({"event": "result", "status": "SUCCESS",
+                         "response": "Первый абзац.\n\n```py\nprint(1)\n\nx = 2\n```\n\nХвост"})
+        self.assertEqual(res, [])
+
     def test_messages_that_come_during_a_turn_go_as_one_turn_after_it(self):
         p = self.session("slow_echo")
         p.user("[hub:m1] первое")
