@@ -212,7 +212,7 @@ class ManifestAndWeb(unittest.TestCase):
         with open(os.path.join(MODULE, "module.json"), encoding="utf-8") as f:
             man = json.load(f)
         self.assertEqual(modules.validate(man, "module.json"), [])
-        self.assertEqual(man["version"], "0.3.11")
+        self.assertEqual(man["version"], "0.3.12")
         self.assertEqual(man["web"], "web/main.js")
         self.assertIn("antigravity_quota", man["snapshot"]["keys"])
         self.assertIn("antigravity_models", man["snapshot"]["keys"])
@@ -298,6 +298,47 @@ console.log("JS_OK");
         cp = subprocess.run([node, "--input-type=module", "-e", script], capture_output=True, text=True, timeout=15)
         self.assertEqual(cp.returncode, 0, cp.stderr or cp.stdout)
         self.assertIn("JS_OK", cp.stdout)
+
+    def test_web_models_js_splits_models_and_efforts(self):
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("node не установлен")
+        models_js = os.path.join(MODULE, "web", "models.js")
+        script = f"""
+import assert from "node:assert/strict";
+import {{ splitModelTitle, modelGroups, pickVariant }} from {json.dumps("file://" + models_js)};
+
+assert.deepEqual(splitModelTitle("Gemini 4 Hydrogen (XHigh)"), {{ base: "Gemini 4 Hydrogen", effort: "XHigh" }});
+assert.deepEqual(splitModelTitle("Orchestrator (Neon)"), {{ base: "Orchestrator", effort: "Neon" }});
+assert.deepEqual(splitModelTitle("Custom Model"), {{ base: "Custom Model", effort: "" }});
+
+const catalog = [
+  {{ id: "claude-agy-gemini-4-hydrogen-xhigh", agy_id: "gemini-4-hydrogen-xhigh", title: "Gemini 4 Hydrogen (XHigh)", category: "Gemini" }},
+  {{ id: "claude-agy-gemini-4-hydrogen-low", agy_id: "gemini-4-hydrogen-low", title: "Gemini 4 Hydrogen (Low)", category: "Gemini" }},
+  {{ id: "claude-agy-gemini-4-hydrogen-high", agy_id: "gemini-4-hydrogen-high", title: "Gemini 4 Hydrogen (High)", category: "Gemini" }},
+  {{ id: "claude-agy-claude-opus-5-5-high", agy_id: "claude-opus-5-5-high", title: "Claude Opus 5.5 (High)", category: "Claude" }},
+  {{ id: "claude-agy-claude-opus-5-5-low", agy_id: "claude-opus-5-5-low", title: "Claude Opus 5.5 (Low)", category: "Claude" }},
+  {{ id: "claude-agy-gpt-oss-120b-medium", agy_id: "gpt-oss-120b-medium", title: "GPT-OSS 120B (Medium)", category: "GPT" }},
+];
+
+const groups = modelGroups(catalog);
+assert.equal(groups.get("Gemini").length, 1);
+const hydrogen = groups.get("Gemini")[0];
+assert.equal(hydrogen.base, "Gemini 4 Hydrogen");
+assert.deepEqual(hydrogen.variants.map((v) => v.effort), ["Low", "High", "XHigh"]);
+
+const opus = groups.get("Claude")[0];
+assert.equal(pickVariant(opus, "Low").id, "claude-agy-claude-opus-5-5-low");
+// XHigh у Opus нет -> выбирается High
+assert.equal(pickVariant(opus, "XHigh").id, "claude-agy-claude-opus-5-5-high");
+// У GPT-OSS 120B только Medium
+const gpt = groups.get("GPT")[0];
+assert.equal(pickVariant(gpt, "High").id, "claude-agy-gpt-oss-120b-medium");
+console.log("MODELS_JS_OK");
+"""
+        cp = subprocess.run([node, "--input-type=module", "-e", script], capture_output=True, text=True, timeout=15)
+        self.assertEqual(cp.returncode, 0, cp.stderr or cp.stdout)
+        self.assertIn("MODELS_JS_OK", cp.stdout)
 
 
 if __name__ == "__main__":
