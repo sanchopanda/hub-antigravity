@@ -16,16 +16,16 @@ function visible(session) {
 }
 
 export default function register(hub) {
-  let picker, select, sessionName;
   hub.addStyle("models.css");
 
   function make(root) {
-    picker = hub.el("span", "agy-model-picker");
+    const picker = hub.el("span", "agy-model-picker");
     picker.append(hub.el("label", null, "Модель Antigravity"));
-    select = hub.el("select");
+    const select = hub.el("select");
     select.setAttribute("aria-label", "Модель Antigravity для этой сессии");
     picker.append(select);
     root.append(picker);
+    return {picker, select, sessionName: null};
   }
 
   hub.addSlot("session.header", {
@@ -35,7 +35,12 @@ export default function register(hub) {
       const session = ctx?.session;
       const active = visible(session);
       document.documentElement.classList.toggle("hub-agy-session", active);
-      if (!picker || !picker.isConnected) make(root);
+      let controls = root.querySelector(":scope > .agy-model-picker");
+      if (!controls) {
+        controls = make(root).picker;
+        controls._agyControls = {picker: controls, select: controls.querySelector("select"), sessionName: null};
+      }
+      const {picker, select} = controls._agyControls;
       picker.hidden = !active;
       if (!active || !session?.name) return;
 
@@ -66,8 +71,8 @@ export default function register(hub) {
       }
       select.disabled = session.state === "busy";
       select.title = select.disabled ? "Сменится после текущего хода" : "Выбрать модель Antigravity";
-      if (sessionName !== session.name) {
-        sessionName = session.name;
+      if (controls._agyControls.sessionName !== session.name) {
+        controls._agyControls.sessionName = session.name;
         select.onchange = async () => {
           const chosen = select.value;
           select.disabled = true;
