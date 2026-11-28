@@ -65,7 +65,7 @@ def status(cfg=None, now=None):
     lines.append(f"тихие часы: {cfg.get('quiet') or 'выключены'}; исполнители на claude-agy: {'да' if cfg.get('executors') else 'нет'}")
     ds = store.deepseek_spent_today(now)
     lines.append(f"DeepSeek через deepseek_ask за сегодня: {ds:.4f} $ из {float((cfg.get('deepseek') or {}).get('day_usd') or 0):.2f} $")
-    lines.append("модели: " + (", ".join(f"{k} → {v or 'agy по умолчанию'}" for k, v in sorted(cfg["models"].items())) or "не заданы (hub.json, antigravity.models)"))
+    lines.append("модели: " + (", ".join(f"{k} → {v or 'agy по умолчанию'}" for k, v in sorted(cfg["models"].items())) or f"отображение пусто; основная {cfg.get('primary_model') or 'не задана'} (hub.json, antigravity.primary_model)"))
     return lines
 
 
@@ -117,8 +117,15 @@ def doctor(cfg=None, run=subprocess.run):
         out.append({"name": "antigravity: agy", "ok": True, "detail": f"{agy}: {ver}"})
     else:
         out.append({"name": "antigravity: agy", "ok": False, "detail": "agy не установлен (шаг 4 плана: ставит владелец)"})
-    out.append({"name": "antigravity: модели", "ok": bool(cfg["models"]),
-                "detail": ", ".join(f"{k}→{v or 'по умолчанию'}" for k, v in sorted(cfg["models"].items())) or "hub.json antigravity.models пуст"})
+    models = cfg.get("models") or {}
+    primary = str(cfg.get("primary_model") or "")
+    parts = []
+    if primary:
+        parts.append(f"основная {primary}")
+    if models:
+        parts.append(", ".join(f"{k}→{v or 'по умолчанию'}" for k, v in sorted(models.items())))
+    out.append({"name": "antigravity: модели", "ok": bool(models or primary),
+                "detail": "; ".join(parts) or "не заданы ни antigravity.primary_model, ни antigravity.models в hub.json"})
     host = store.read_json(store.hub_json_path()).get("host")
     ok, text = service_has_shell(host=host)
     out.append({"name": "antigravity: маршрут", "ok": bool(ok), "detail": text})

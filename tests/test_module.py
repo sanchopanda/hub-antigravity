@@ -235,6 +235,17 @@ class Commands(Env):
             self.assertIsInstance(c["ok"], bool)
             self.assertLessEqual(len(c["detail"]), 500)
 
+    def test_doctor_models_check_accepts_primary_model_without_models_map(self):
+        os.environ["HUB_MOD_ANTIGRAVITY_AGY"] = os.path.join(self.dir, "нет-agy")
+        self.hub({"antigravity": {}})                                    # models пусто, primary_model — из умолчаний
+        c = {c["name"]: c for c in agycli.doctor()}["antigravity: модели"]
+        self.assertTrue(c["ok"])
+        self.assertIn("gemini-4-hydrogen-high", c["detail"])
+        self.hub({"antigravity": {"primary_model": ""}})                 # нет ни models, ни primary_model
+        c = {c["name"]: c for c in agycli.doctor()}["antigravity: модели"]
+        self.assertFalse(c["ok"])
+        self.assertIn("primary_model", c["detail"])
+
     def test_plist_check_reads_only(self):
         plist = os.path.join(self.dir, "x.plist")
         with open(plist, "w") as f:

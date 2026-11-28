@@ -19,7 +19,7 @@ hub antigravity doctor
 в `$HUB_MOD_ANTIGRAVITY_ROOT/codex_bridge.py`. При обновлении модуль переносит установленные записи хука
 и MCP в конфигурации agy на актуальную версию.
 
-Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.4.3 — модуль включён в хабе (`HUB_CLAUDE` в службе,
+Спека: `~/.hub-personal/antigravity-research/spec.md`. Версия 0.4.6 — модуль включён в хабе (`HUB_CLAUDE` в службе,
 `agy 1.5.18`, `setup` выполнен). Скиллы agy настроены глобально (`~/.gemini/config/skills.json`), исполнители и
 мини-хабы идут через мост, их запреты держит хук agy; в верхней полосе страницы хаба работает веб-виджет остатка квоты.
 

@@ -212,7 +212,7 @@ class ManifestAndWeb(unittest.TestCase):
         with open(os.path.join(MODULE, "module.json"), encoding="utf-8") as f:
             man = json.load(f)
         self.assertEqual(modules.validate(man, "module.json"), [])
-        self.assertEqual(man["version"], "0.4.5")
+        self.assertEqual(man["version"], "0.4.6")
         self.assertEqual(man["web"], "web/main.js")
         self.assertIn("antigravity_quota", man["snapshot"]["keys"])
         self.assertIn("antigravity_models", man["snapshot"]["keys"])
